@@ -1,0 +1,42 @@
+# 改行は LF に統一する。
+# Unity のシーン・prefab・.meta は YAML テキストなので、
+# 機械ごとに CRLF/LF が揺れると中身が同じでも差分になる。
+# (開発機 Ultra5 と点群生成機 RTX5070 の両方で触るため)
+* text=auto eol=lf
+
+# --- Unity のテキスト資産（マージ時に壊さない） -------------
+*.cs        text diff=csharp
+*.shader    text
+*.cginc     text
+*.json      text
+*.md        text
+*.asset     text merge=binary
+*.unity     text merge=binary
+*.prefab    text merge=binary
+*.mat       text merge=binary
+*.anim      text merge=binary
+*.controller text merge=binary
+*.physicMaterial text merge=binary
+*.meta      text merge=binary
+
+# --- バイナリ（改行変換を絶対にかけない） -------------------
+*.ttf       binary
+*.otf       binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.psd       binary
+*.tga       binary
+*.fbx       binary
+*.obj       binary
+*.wav       binary
+*.mp3       binary
+*.aar       binary
+*.jar       binary
+*.so        binary
+*.dll       binary
+*.apk       binary
+*.aab       binary
+*.unitypackage binary
+*.las       binary
+*.laz       binary

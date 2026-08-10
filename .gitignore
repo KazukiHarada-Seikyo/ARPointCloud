@@ -1,0 +1,72 @@
+# ===========================================================
+# ARPointCloud / .gitignore
+#
+# root の ignore.conf は Plastic SCM 用で git は読まない。
+# git 側の除外設定はこのファイルが担当する。
+# ===========================================================
+
+# --- Unity が再生成するもの ---------------------------------
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]serSettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+/.utmp/
+
+# --- 他のバージョン管理ツール・エージェントのローカル設定 ----
+/.plastic/
+/.claude/settings.local.json
+
+# Unity が自動生成するソリューション・プロジェクトファイル
+*.csproj
+*.unityproj
+*.sln
+*.slnx
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# --- Asset Store / IDE / OS ---------------------------------
+/[Aa]ssets/AssetStoreTools*
+/[Aa]ssets/Plugins/Editor/JetBrains*
+/[Aa]ssets/Plugins/PlasticSCM*
+.vs/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# --- ビルド成果物 -------------------------------------------
+*.apk
+*.aab
+*.unitypackage
+*.app
+
+# --- クラッシュレポート -------------------------------------
+sysinfo.txt
+crashlytics-build.properties
+
+# ===========================================================
+# ここから下は ARPointCloud 固有
+# ===========================================================
+
+# APIキーが平文で入るため除外する。
+# 一度コミットすると履歴に残り、あとから消すのが面倒なので最初から入れておく。
+# 必要な項目は同ディレクトリの .template を参照。
+/ProjectSettings/ARCoreExtensionsProjectSettings.json
+
+# 端末から adb pull した撮影データの置き場。
+# 1080p JPEG は 10fps で 1分あたり 200〜300MB。git に入れてはいけない。
+# 撮影データは必ずこのどちらかに置くこと。
+/Captures/
+/Data/

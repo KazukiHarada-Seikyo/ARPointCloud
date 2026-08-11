@@ -273,41 +273,34 @@ public class FrameCapture : MonoBehaviour
             return;
         }
 
-        var oldest = FindOldestRecording();
-        if (oldest == null)
+        var target = FindOldest();
+        if (target == null)
         {
-            SetNotice("消せる撮影データがありません");
+            SetNotice("消せるデータがありません");
             _deleteArmedFor = null;
             return;
         }
 
         // 1回目、または対象が変わった、または時間切れ → 確認を出すだけ
-        bool armed = _deleteArmedFor == oldest.Name
+        bool armed = _deleteArmedFor == target.Name
                      && Time.unscaledTime - _deleteArmedAt <= DeleteConfirmSeconds;
 
         if (!armed)
         {
-            _deleteArmedFor = oldest.Name;
+            _deleteArmedFor = target.Name;
             _deleteArmedAt = Time.unscaledTime;
-
-            int photos = oldest.GetFiles("*.jpg").Length;
-            float mb = 0f;
-            foreach (var f in oldest.GetFiles()) mb += f.Length / 1024f / 1024f;
-
-            SetNotice($"もう一度押すと削除します\n"
-                      + $"{oldest.Name} / 写真{photos}枚 / {mb:F0}MB");
+            SetNotice($"もう一度押すと削除します
+{target.Describe()}");
             return;
         }
 
         // 2回目 → 実行
         _deleteArmedFor = null;
-
-        float freedMb = 0f;
-        foreach (var f in oldest.GetFiles()) freedMb += f.Length / 1024f / 1024f;
+        float freedMb = target.Megabytes;
 
         try
         {
-            oldest.Delete(true);
+            target.Delete();
         }
         catch (Exception e)
         {
@@ -319,13 +312,63 @@ public class FrameCapture : MonoBehaviour
         // 空き容量の表示をすぐ更新する
         _nextFreeSpaceCheck = 0f;
 
-        SetNotice($"削除しました {oldest.Name}\n{freedMb:F0}MB 空きました");
+        SetNotice($"削除しました {target.Name}
+{freedMb:F0}MB 空きました");
     }
 
-    private DirectoryInfo FindOldestRecording()
+    /// <summary>消す対象。撮影フォルダとCSVを同じ土俵で扱う</summary>
+    private class DeleteTarget
+    {
+        public string Name;
+        public string SortKey;      // yyyyMMdd_HHmmss。文字列の並びが時刻の並びになる
+        public float Megabytes;
+        public int Photos;
+        public bool IsFolder;
+        public string Path;
+
+        /// <summary>まとめて消すとき（単発撮影の写真）に使う</summary>
+        public string[] Paths;
+
+        public string Describe()
+        {
+            if (IsFolder) return $"{Name} / 写真{Photos}枚 / {Megabytes:F0}MB";
+            if (Paths != null) return $"{Name} / {Megabytes:F0}MB";
+            return $"{Name} / ログ / {Megabytes:F1}MB";
+        }
+
+        public void Delete()
+        {
+            if (IsFolder)
+            {
+                Directory.Delete(Path, true);
+            }
+            else if (Paths != null)
+            {
+                foreach (var p in Paths) File.Delete(p);
+            }
+            else
+            {
+                File.Delete(Path);
+            }
+        }
+    }
+
+    /// <summary>
+    /// いちばん古いものを選ぶ。撮影フォルダ(rec_)とCSVログ(geolog_)の両方が対象。
+    ///
+    /// CSVロガーは押すたびに1本増えるので、これを消せないと溜まる一方になる。
+    /// どちらも名前に yyyyMMdd_HHmmss が入っているので、同じ土俵で古い順に選べる。
+    /// </summary>
+    private DeleteTarget FindOldest()
     {
         var dir = new DirectoryInfo(Application.persistentDataPath);
-        DirectoryInfo oldest = null;
+        DeleteTarget oldest = null;
+
+        void Consider(DeleteTarget t)
+        {
+            if (oldest == null || string.CompareOrdinal(t.SortKey, oldest.SortKey) < 0)
+                oldest = t;
+        }
 
         foreach (var d in dir.GetDirectories("rec_*"))
         {
@@ -336,28 +379,59 @@ public class FrameCapture : MonoBehaviour
                 string.Equals(d.FullName, _sessionDir, StringComparison.Ordinal))
                 continue;
 
-            // 名前が rec_yyyyMMdd_HHmmss なので、文字列の並びが時刻の並びになる
-            if (oldest == null || d.Name.CompareTo(oldest.Name) < 0) oldest = d;
+            float mb = 0f;
+            var files = d.GetFiles();
+            foreach (var f in files) mb += f.Length / 1024f / 1024f;
+
+            Consider(new DeleteTarget
+            {
+                Name = d.Name,
+                SortKey = d.Name.Length > 4 ? d.Name.Substring(4) : d.Name,
+                Megabytes = mb,
+                Photos = d.GetFiles("*.jpg").Length,
+                IsFolder = true,
+                Path = d.FullName,
+            });
+        }
+
+        foreach (var f in dir.GetFiles("geolog_*.csv"))
+        {
+            Consider(new DeleteTarget
+            {
+                Name = f.Name,
+                SortKey = f.Name.Length > 7 ? f.Name.Substring(7) : f.Name,
+                Megabytes = f.Length / 1024f / 1024f,
+                IsFolder = false,
+                Path = f.FullName,
+            });
+        }
+
+        // 単発撮影のJPEGは rec_ の外に出る。まとめて1件として扱う
+        var loose = dir.GetFiles("frame_*.jpg");
+        if (loose.Length > 0)
+        {
+            float mb = 0f;
+            foreach (var f in loose) mb += f.Length / 1024f / 1024f;
+            string first = loose[0].Name;
+            foreach (var f in loose)
+                if (string.CompareOrdinal(f.Name, first) < 0) first = f.Name;
+
+            var paths = new string[loose.Length];
+            for (int i = 0; i < loose.Length; i++) paths[i] = loose[i].FullName;
+
+            Consider(new DeleteTarget
+            {
+                Name = $"単発の写真 {loose.Length}枚",
+                SortKey = first.Length > 6 ? first.Substring(6) : first,
+                Megabytes = mb,
+                Photos = loose.Length,
+                IsFolder = false,
+                Paths = paths,
+            });
         }
 
         return oldest;
     }
-
-    /// <summary>
-    /// 直近の撮影の frames.csv だけを共有シートに出す。
-    ///
-    /// 写真は数百MBあって現地では送れないが、CSVは数百KBなので送れる。
-    /// 姿勢と精度がその場で確認できるので、条件の悪い場所で撮り続けて
-    /// しまう事故を防げる。写真そのものはUSBで持ち帰る。
-    /// </summary>
-    public void ShareFramesCsv()
-    {
-        // 停止処理の途中はまだ書き込みが残っている。閉じきるまで待つ
-        if (_writer != null)
-        {
-            SetNotice("録画中です。止めてから共有してください");
-            return;
-        }
 
         var dir = new DirectoryInfo(Application.persistentDataPath);
         DirectoryInfo latest = null;

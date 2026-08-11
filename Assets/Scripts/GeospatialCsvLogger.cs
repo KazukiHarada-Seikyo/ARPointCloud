@@ -7,10 +7,21 @@ using UnityEngine;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 
+/// <summary>
+/// 撮影せずにログだけ取るためのロガー。
+/// 階を変えた楕円体高の検証など、画像が要らない作業で使う。
+///
+/// 撮影中は FrameCapture の frames.csv 一本に寄せる。
+/// 列が包含関係にあるうえ、書き込みが競合して保存が詰まるため、
+/// 両者は相互ガードで排他にしてある。
+/// </summary>
 public class GeospatialCsvLogger : MonoBehaviour
 {
     [SerializeField] private AREarthManager _earthManager;
     [SerializeField] private Camera _arCamera;
+
+    [Tooltip("同時に走らせないための相互ガード")]
+    [SerializeField] private FrameCapture _frameCapture;
 
     private StreamWriter _writer;
     private string _path;
@@ -48,6 +59,15 @@ public class GeospatialCsvLogger : MonoBehaviour
 
     private void StartRecording()
     {
+        // 撮影中は frames.csv 側が同じ値をすべて書いている。
+        // 二重に書くと書き込みが競合して、写真の保存が詰まる
+        if (_frameCapture != null && _frameCapture.IsRecording)
+        {
+            LastMessage = "撮影中です。frames.csv に記録されています";
+            Debug.LogWarning(LastMessage);
+            return;
+        }
+
         _path = Path.Combine(
             Application.persistentDataPath,
             $"geolog_{DateTime.Now:yyyyMMdd_HHmmss}.csv");

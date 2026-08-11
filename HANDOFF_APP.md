@@ -21,12 +21,16 @@
 
 | ファイル | 役割 | 状態 |
 |---|---|---|
+| `FrameCapture.cs` | 姿勢付き連番JPEGの撮影＋`frames.csv` | 実機確認済み |
 | `GeospatialStatusDisplay.cs` | 4段ステータス＋精度＋方位角(参考)＋ローカル座標の画面表示 | 完成 |
 | `GeospatialCsvLogger.cs` | 毎フレーム生値のみCSV記録＋NativeShare共有 | 完成 |
-| `VpsCoverageChecker.cs` | Inspectorに登録した座標リストを順に一括問い合わせ | 完成（実用性は低いと判明） |
-| `CameraConfigLister.cs` | 映像設定の一覧表示＋最高解像度への切替 | 完成（調査用） |
 
-4本とも同一GameObject(`Debug UI`)に貼り、Inspectorで相互参照を接続済み。UIはCanvas＋TextMeshPro(Noto Sans JP, Dynamicアトラス)。ボタンからOnClickで各メソッドを呼ぶ構成。
+3本とも同一GameObject(`Debug UI`)に貼り、Inspectorで相互参照を接続済み。UIはCanvas＋TextMeshPro(Noto Sans JP, Dynamicアトラス)。ボタンからOnClickで各メソッドを呼ぶ構成。
+
+**役目を終えて削除したもの**（答えが出た調査ツール。必要ならgit履歴から戻せる）:
+
+- `VpsCoverageChecker.cs` — カバレッジ問い合わせは候補地の絞り込みに使えないと判明（§5-6）
+- `CameraConfigLister.cs` — 解像度一覧の答えは出て記録済み。切替は `FrameCapture` が自動で行う
 
 **画面の方位角だけは計算値**: `GeospatialStatusDisplay.HeadingFromEun()` がEUNクォータニオンから方位角を出して表示している。§2の「計算はしない」原則の例外だが、**画面表示のみでCSVには書いていない**。この線引きは意図的なので、消さないこと・CSVに足さないこと。
 
@@ -68,8 +72,20 @@
 **Step 1 — 1枚だけ保存する**
 `ARCameraManager.frameReceived` を購読し、`TryAcquireLatestCpuImage()` で1枚取得 → JPEGにして `Application.persistentDataPath` に保存 → 画面にファイル名とバイト数を出す。ここまでで一度実機確認。
 
-**Step 2 — 連続保存**
+**Step 2 — 連続保存**（実装済み・実機未確認）
 録画中は一定レート（初期値10fps）で保存し続ける。同時に `frames.csv` を書く。
+
+保存先は撮影ごとのフォルダに分ける。撮り直しても混ざらず、PCへ持ち帰るときもフォルダ単位で済む:
+
+```
+persistentDataPath/
+  rec_20260811_090000/
+    frames.csv
+    frame_1786404546165.jpg
+    ...
+```
+
+**変換が間に合わないときは、そのコマを見送る。** 未処理の `ConvertAsync` が4枚を超えたら投げない。積み上がるとメモリを食い潰すため。これは「現地で判断しない」原則には抵触しない — 捨てているのは写りの良し悪しではなく**機械が間に合わなかった分**であり、見送った枚数は `DroppedCount` として画面に出る。Step 3でレートを決める材料になる。
 
 **Step 3 — 負荷調整**
 1080pの変換が間に合うか実機で見て、レートを決める。
@@ -138,11 +154,11 @@ angular_speed_deg_s
 ## 3. 罠と注意（実機で踏んだもの）
 
 ### 解像度は起動のたびに640×480へ戻る
-`currentConfiguration` はセッションと共に作り直される。**自動で1920×1080を選ぶ処理を入れること。** ボタン押し忘れで低解像度データが残るのが最悪の事故。切替時はカメラが再起動しトラッキングが一度リセットされる。
+`currentConfiguration` はセッションと共に作り直される。低解像度のまま撮ってしまうのが最悪の事故。切替時はカメラが再起動しトラッキングが一度リセットされる。
 
-**ただし「起動時」には設定できない。** `GetConfigurations()` は映像が流れ始めるまで0件を返す（`CameraConfigLister.cs` の「映像がまだ流れていません」分岐がこれ）。**設定一覧が空でなくなった最初のタイミングで1回だけ**切り替える形にする。
+**「起動時」には設定できない。** `GetConfigurations()` は映像が流れ始めるまで0件を返す。そのため `FrameCapture.TrySelectHighestResolutionOnce()` は**一覧が空でなくなった最初のタイミングで1回だけ**切り替える。
 
-さらに、切替でトラッキングがリセットされる以上、**切替は録画開始より前に完了していなければならない**。録画ボタン側にガードを入れる（現在の解像度が1920×1080でなければ録画を開始しない）。
+切替でトラッキングがリセットされる以上、切替は録画開始より前に完了していなければならない。`FrameCapture.StartRecording()` に、最高解像度でなければ録画を開始しないガードを入れてある。
 
 ### 1920×1080は4:3から16:9に縦がトリミングされている
 水平視野は69度のまま、垂直視野が約55度→約42度に狭まる。cyが3倍にならない（713ではなく534）のはこのため。
@@ -176,9 +192,17 @@ AR Foundationから固定できない。フレーム間で明るさが変わる�
 
 ### 取り出し
 ```
-adb pull /sdcard/Android/data/jp.seikyo.arpointcloud/files/ .
+adb pull /sdcard/Android/data/jp.seikyo.arpointcloud/files/ ./Captures/
 ```
-Android 11以降、この領域はファイルマネージャから見えない。CSV1枚ならNativeShareの共有シートでも可。**写真が数百〜数千枚（数GB）になる**ので撮影データはUSB前提。
+撮影1回分だけなら `.../files/rec_20260811_090000/ ./Captures/` のようにフォルダを指定する。
+
+**`adb` はPATHに通っていない。** Unity同梱のものを使う:
+```
+C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Data\PlaybackEngines\AndroidPlayer\SDK\platform-tools\adb.exe
+```
+PowerShellでその場だけ通すなら `$env:Path += ";<上記フォルダ>"`。
+
+Android 11以降、この領域はファイルマネージャから見えない。CSV1枚ならNativeShareの共有シートでも可。**写真が数百〜数千枚（数GB）になる**ので撮影データはUSB前提。取り出し先の `Captures/` と `Data/` は `.gitignore` 済み。
 
 ---
 

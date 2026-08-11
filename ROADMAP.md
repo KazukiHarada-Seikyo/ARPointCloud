@@ -95,8 +95,9 @@ ARCoreは過去の推定を遡って修正するため、セッション前半�
 
 - `GeospatialStatusDisplay.cs` — 4段ステータス+精度+ローカル座標の画面表示。TextMeshPro(Noto Sans JP, Dynamicアトラス)
 - `GeospatialCsvLogger.cs` — 毎フレーム生値のみCSV記録。計算値は書かない。追跡不成立行は空欄(0を書かない)。InvariantCulture必須。60フレームごとflush。NativeShareで共有
-- `VpsCoverageChecker.cs` — 座標リストのカバレッジ一括問い合わせ
-- `CameraConfigLister.cs` — 映像設定の一覧表示+最高解像度への切替(調査用)
+- `FrameCapture.cs` — 姿勢付き連番JPEGの撮影+frames.csv。解像度の自動設定と3つのガード(解像度・排他・空き容量)
+
+役目を終えて削除: `VpsCoverageChecker.cs`(カバレッジは絞り込みに使えないと判明) / `CameraConfigLister.cs`(解像度の答えが出て、切替はFrameCaptureが自動化)。必要ならgit履歴から戻せる。
 
 CSV列: unix_ms, elapsed_s, frame, session_state, earth_state, tracking_state, local_p*(3), local_q*(4), lat, lon, alt_ellipsoid, eun_q*(4), acc_h, acc_v, acc_yaw
 `elapsed_s` は**アプリ起動からの経過秒**(Time.realtimeSinceStartup)。録画開始からではない。

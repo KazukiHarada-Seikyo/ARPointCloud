@@ -10,8 +10,7 @@ public class GeospatialStatusDisplay : MonoBehaviour
     [SerializeField] private Camera _arCamera;
     [SerializeField] private TextMeshProUGUI _text;
     [SerializeField] private GeospatialCsvLogger _logger;
-    [SerializeField] private VpsCoverageChecker _coverage;
-    [SerializeField] private CameraConfigLister _configLister;
+    [SerializeField] private FrameCapture _capture;
 
     private void Start()
     {
@@ -20,13 +19,6 @@ public class GeospatialStatusDisplay : MonoBehaviour
 
     private void Update()
     {
-        // 映像設定を確認しているときは、そちらに画面を明け渡す
-        if (_configLister != null && !string.IsNullOrEmpty(_configLister.Report))
-        {
-            _text.text = _configLister.Report;
-            return;
-        }
-
         // 1段目：端末が対応しているか
         var supported = _earthManager.IsGeospatialModeSupported(GeospatialMode.Enabled);
 
@@ -55,10 +47,19 @@ public class GeospatialStatusDisplay : MonoBehaviour
 
         var local = _arCamera.transform.position;
 
+        // 撮影の状態。録画中はここが主役になる
+        string captureLine = "";
+        if (_capture != null)
+        {
+            captureLine =
+                $"撮影: {(_capture.IsRecording ? "● " + _capture.SessionName : "停止中")}\n" +
+                $"{_capture.LastMessage}\n";
+        }
+
         _text.text =
-            $"REC: {(_logger.IsRecording ? "● " + _logger.FileName : "停止中")}  CSV:{_logger.FileCount}件\n" +
+            $"{captureLine}" +
+            $"LOG: {(_logger.IsRecording ? "● " + _logger.FileName : "停止中")}  CSV:{_logger.FileCount}件\n" +
             $"{_logger.LastMessage}\n" +
-            $"VPS: {_coverage.Report}\n" +
             $"[1] 端末対応  : {supported}\n" +
             $"[2] EarthState: {earthState}\n" +
             $"[3] Tracking  : {trackingState}\n" +

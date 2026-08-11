@@ -137,7 +137,7 @@ public class CaptureGuidance
                      capture.SavedCount > 30)
                 advice = "保存が追いついていません";
             else
-                advice = "ゆっくり歩きながら、同じ場所を別の角度からも映してください";
+                advice = "別の角度からも映してください";
             return;
         }
 
@@ -154,15 +154,15 @@ public class CaptureGuidance
         {
             level = Level.Wait;
             headline = "準備中";
-            advice = "スマホをゆっくり左右に動かして、周りの景色を映してください";
+            advice = "ゆっくり左右に動かしてください";
             return;
         }
 
         if (!capture.IsHighestResolution)
         {
             level = Level.Blocked;
-            headline = "解像度が低いままです";
-            advice = $"現在 {capture.ResolutionText}。数秒待つと自動で切り替わります";
+            headline = "解像度を切り替え中";
+            advice = $"{capture.ResolutionText} → 少し待ってください";
             return;
         }
 
@@ -180,7 +180,7 @@ public class CaptureGuidance
         {
             level = Level.Wait;
             headline = "位置を取得中";
-            advice = "空が見える場所で、建物や看板を映してください";
+            advice = "建物や看板を映してください";
             return;
         }
 
@@ -188,33 +188,30 @@ public class CaptureGuidance
         if (extrapolating)
         {
             level = Level.Caution;
-            headline = "位置が更新されていません";
-            advice = $"{frozenSeconds:F0}秒間、精度の値が動いていません。"
-                     + "測っていない可能性があります。歩いて場所を変えてください";
+            headline = "位置が止まっています";
+            advice = $"{frozenSeconds:F0}秒 更新なし。歩いて場所を変えてください";
             return;
         }
 
         if (yawAccuracy > YawPoor)
         {
             level = Level.Wait;
-            headline = "方位が定まっていません";
-            advice = $"現在 {yawAccuracy:F1}度。"
-                     + "10秒ほど歩いて、周りの建物を映すと下がります";
+            headline = "方位を調整中";
+            advice = $"{yawAccuracy:F1}度 → 歩いて周りを映してください";
             return;
         }
 
         if (yawAccuracy > YawGood || horizAccuracy > HorizPoor)
         {
             level = Level.Caution;
-            headline = "撮れますが精度は不十分";
-            advice = $"方位 {yawAccuracy:F1}度 / 水平 {horizAccuracy:F1}m。"
-                     + "もう少し歩くと良くなることがあります";
+            headline = "撮れます（精度は不十分）";
+            advice = $"方位 {yawAccuracy:F1}度 / 水平 {horizAccuracy:F1}m";
             return;
         }
 
         level = Level.Ready;
         headline = "撮影できます";
-        advice = "録画を押して、ゆっくり歩きながらかざしてください";
+        advice = "ゆっくり歩きながらかざしてください";
     }
 
     // ------------------------------------------------------------

@@ -41,7 +41,9 @@ public class GeospatialStatusDisplay : MonoBehaviour
     {
         _guidance.Tick(_earthManager, _capture);
 
-        _text.text = Headline() + Checklist() + (_showDetail ? Detail() : "");
+        // 既定では案内だけ。チェック項目と数値は「i」を押したときだけ出す。
+        // 常時7行出ていると、映像が主役でなくなって道具として使いにくい
+        _text.text = Headline() + (_showDetail ? Checklist() + Detail() : "");
     }
 
     // ------------------------------------------------------------
@@ -51,25 +53,26 @@ public class GeospatialStatusDisplay : MonoBehaviour
     private string Headline()
     {
         string c = _guidance.LevelColor;
-        string s = $"<size=150%><color={c}>● {_guidance.headline}</color></size>\n";
+
+        // 見出しは大きく短く。読む前に色で状態が分かるようにする
+        string s = $"<size=170%><b><color={c}>{_guidance.headline}</color></b></size>\n";
 
         if (_guidance.level == CaptureGuidance.Level.Recording && _capture != null)
         {
             int sec = Mathf.FloorToInt(_capture.RecordingSeconds);
-            s += $"<size=130%><color={c}>{sec / 60}:{sec % 60:00}"
-                 + $"   {_capture.SavedCount}枚</color></size>\n";
+            s += $"<size=140%><color={c}>{sec / 60}:{sec % 60:00}"
+                 + $"　{_capture.SavedCount}枚</color></size>\n";
         }
+
+        s += $"<size=95%><color=#DDDDDD>{_guidance.advice}</color></size>\n";
 
         // 特徴点の数は「認識できている量」の手応えになる。
         // ただしこれは完成する点群ではないので、そう読める書き方は避ける
         if (_preview != null && _preview.PointCount > 0)
         {
-            s += $"<size=90%><color=#8FD6A6>認識中の目印 "
-                 + $"{_preview.PointCount:N0}</color></size>\n";
+            s += $"<size=80%><color=#9FBEDE>目印 {_preview.PointCount:N0}</color></size>\n";
         }
 
-        s += $"{_guidance.advice}\n";
-        s += "<color=#666666>────────────────</color>\n";
         return s;
     }
 
@@ -79,7 +82,7 @@ public class GeospatialStatusDisplay : MonoBehaviour
 
     private string Checklist()
     {
-        string s = "";
+        string s = "\n";
 
         s += Line(_guidance.SessionState, "端末の追跡",
                   _guidance.sessionOk ? "良好" : "まだ");
@@ -116,7 +119,6 @@ public class GeospatialStatusDisplay : MonoBehaviour
                  + "動いていません（外挿の疑い）</color>\n";
         }
 
-        s += "<color=#666666>────────────────</color>\n";
         return s;
     }
 

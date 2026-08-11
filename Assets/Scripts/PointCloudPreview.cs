@@ -29,19 +29,25 @@ public class PointCloudPreview : MonoBehaviour
     [SerializeField] private FrameCapture _capture;
 
     [Header("見た目")]
-    [SerializeField, Range(2f, 40f)] private float _pointSize = 9f;
+    [SerializeField, Range(2f, 40f)] private float _pointSize = 7f;
 
     [Tooltip("現れた直後の色")]
-    [SerializeField] private Color _freshColor = new Color(0.42f, 0.95f, 0.62f);
+    [SerializeField] private Color _freshColor = new Color(1f, 1f, 1f, 0.95f);
 
     [Tooltip("落ち着いたあとの色")]
-    [SerializeField] private Color _settledColor = new Color(0.55f, 0.75f, 1f, 0.55f);
+    [SerializeField] private Color _settledColor = new Color(0.62f, 0.82f, 1f, 0.42f);
 
     [Tooltip("現れてから落ち着くまでの秒数")]
-    [SerializeField] private float _settleSeconds = 1.2f;
+    [SerializeField] private float _settleSeconds = 0.7f;
 
-    [Tooltip("現れた瞬間の大きさの倍率")]
-    [SerializeField] private float _popScale = 2.2f;
+    [Tooltip("現れた瞬間の大きさの倍率。大きくすると賑やかになる")]
+    [SerializeField] private float _popScale = 1.5f;
+
+    [Header("重複の除き方")]
+    [Tooltip("この間隔(m)の格子で同じ点とみなす。" +
+             "ARCoreは同じ物理点に別の識別子を振り直すことがあるため、" +
+             "識別子ではなく位置で判断する")]
+    [SerializeField] private float _cellSize = 0.03f;
 
     [Header("負荷")]
     [Tooltip("持つ点の上限。古いものから捨てる")]
@@ -59,9 +65,13 @@ public class PointCloudPreview : MonoBehaviour
         public float bornAt;
     }
 
-    // 同じ点が毎フレーム届くので、識別子で重複を除く
-    private readonly Dictionary<ulong, Entry> _points = new Dictionary<ulong, Entry>();
-    private readonly List<ulong> _order = new List<ulong>();
+    // 空間を格子に切り、同じマスに落ちた点は同じ点とみなす。
+    //
+    // 当初は ARCore の識別子で重複を除いていたが、ARCore は同じ物理的な点に
+    // 別の識別子を振り直すことがある。すると毎回「新しい点」と判定されて
+    // 光り直すので、画面が激しく点滅した。位置で判断すれば起きない。
+    private readonly Dictionary<long, Entry> _points = new Dictionary<long, Entry>();
+    private readonly List<long> _order = new List<long>();
 
     private Mesh _mesh;
     private Material _material;
@@ -164,31 +174,31 @@ public class PointCloudPreview : MonoBehaviour
 
     private void Accumulate(ARPointCloud cloud)
     {
-        if (cloud.positions == null || cloud.identifiers == null) return;
+        if (cloud.positions == null) return;
 
         NativeSlice<Vector3> positions = cloud.positions.Value;
-        NativeSlice<ulong> ids = cloud.identifiers.Value;
-        int n = Mathf.Min(positions.Length, ids.Length);
 
         // 位置は点群空間なので、世界座標へ移す
         Matrix4x4 toWorld = cloud.transform.localToWorldMatrix;
         float now = Time.time;
+        float inv = 1f / Mathf.Max(0.001f, _cellSize);
 
-        for (int i = 0; i < n; i++)
+        for (int i = 0; i < positions.Length; i++)
         {
-            ulong id = ids[i];
             Vector3 world = toWorld.MultiplyPoint3x4(positions[i]);
+            long key = CellKey(world, inv);
 
-            if (_points.TryGetValue(id, out Entry e))
+            if (_points.TryGetValue(key, out Entry e))
             {
-                // 既にある点は位置だけ直す。現れた時刻は保つ
+                // 同じマスに落ちた＝同じ点。現れた時刻は保つ。
+                // ここで bornAt を更新すると、また光り直して点滅する
                 e.world = world;
-                _points[id] = e;
+                _points[key] = e;
             }
             else
             {
-                _points[id] = new Entry { world = world, bornAt = now };
-                _order.Add(id);
+                _points[key] = new Entry { world = world, bornAt = now };
+                _order.Add(key);
             }
         }
 
@@ -198,6 +208,16 @@ public class PointCloudPreview : MonoBehaviour
             _points.Remove(_order[0]);
             _order.RemoveAt(0);
         }
+    }
+
+    /// <summary>世界座標を格子のマス番号にして、1つの整数に詰める</summary>
+    private static long CellKey(Vector3 p, float inv)
+    {
+        // ±10万マス(既定3cmなら±3km)まで衝突しない
+        long x = (long)Mathf.Floor(p.x * inv) + 0x40000;
+        long y = (long)Mathf.Floor(p.y * inv) + 0x40000;
+        long z = (long)Mathf.Floor(p.z * inv) + 0x40000;
+        return (x << 42) ^ (y << 21) ^ z;
     }
 
     // ------------------------------------------------------------

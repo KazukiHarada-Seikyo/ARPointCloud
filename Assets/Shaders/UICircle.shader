@@ -1,13 +1,18 @@
-// UI用の円・リングを計算で描く。
+// UI用の円・角丸・リングを計算で描く。
 //
-// Unity内蔵の Knob スプライトは32px程度しかなく、200pxのボタンに使うと
-// 輪郭がギザギザになる。画像を引き伸ばす代わりに、画素ごとに中心からの
-// 距離を測って塗り分ければ、どんな大きさでも輪郭が滑らかになる。
+// スプライトを引き伸ばすとギザギザになるので、画素ごとに形の内外を判定する。
+// fwidth で1画素あたりの変化量を取るため、どんな大きさでも輪郭が滑らかになる。
 //
-// _RingWidth = 0     … 塗りつぶした円
-// _RingWidth = 0.06  … 太さ6%のリング（録画ボタンの白い輪）
+// _Roundness = 1    … 円
+// _Roundness = 0.35 … 角丸の四角
+// _Roundness = 0    … 四角
+// _RingWidth = 0    … 塗りつぶし
+// _RingWidth > 0    … その太さのリング
 //
-// マテリアルは UICircleImage.cs が実行時に作る。.mat を用意する必要はない。
+// 丸と角丸が同じ式なので、_Roundness を動かせば録画ボタンの
+// 「丸 → 四角」がなめらかに変形する。
+//
+// マテリアルは UICircle.cs が実行時に作る。.mat は不要。
 
 Shader "ARPointCloud/UICircle"
 {
@@ -15,6 +20,7 @@ Shader "ARPointCloud/UICircle"
     {
         [PerRendererData] _MainTex ("Sprite Texture", 2D) = "white" {}
         _Color ("Tint", Color) = (1,1,1,1)
+        _Roundness ("角の丸み (1=円)", Range(0, 1)) = 1
         _RingWidth ("リングの太さ (0=塗りつぶし)", Range(0, 0.5)) = 0
         _Softness ("輪郭のなめらかさ", Range(0.5, 3)) = 1.2
 
@@ -61,6 +67,7 @@ Shader "ARPointCloud/UICircle"
             #include "UnityCG.cginc"
 
             fixed4 _Color;
+            float _Roundness;
             float _RingWidth;
             float _Softness;
 
@@ -87,26 +94,36 @@ Shader "ARPointCloud/UICircle"
                 return o;
             }
 
+            // 角丸四角までの符号付き距離。r=1 で円になる
+            float sdRoundBox(float2 p, float r)
+            {
+                float2 q = abs(p) - (1.0 - r);
+                return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+            }
+
             fixed4 frag (v2f i) : SV_Target
             {
-                // 中心からの距離。0 が中心、1 が外周
-                float d = length(i.uv - 0.5) * 2.0;
+                // 中心を原点にした -1〜1 の座標
+                float2 p = (i.uv - 0.5) * 2.0;
 
-                // fwidth で「この画素1つ分の距離の変化量」を得る。
-                // これを使うと、拡大率に関係なく同じ滑らかさになる
+                float r = clamp(_Roundness, 0.0001, 1.0);
+                float d = sdRoundBox(p, r);
+
+                // 1画素分の距離。拡大率が変わっても滑らかさが一定になる
                 float aa = max(fwidth(d) * _Softness, 0.0001);
 
-                float alpha = 1.0 - smoothstep(1.0 - aa, 1.0, d);
+                float alpha = 1.0 - smoothstep(-aa, aa, d);
 
                 if (_RingWidth > 0.0001)
                 {
-                    float innerEdge = 1.0 - _RingWidth * 2.0;
-                    alpha *= smoothstep(innerEdge - aa, innerEdge, d);
+                    // 内側をくり抜く。距離を太さ分ずらすだけでよい
+                    float inner = sdRoundBox(p, r) + _RingWidth * 2.0;
+                    alpha *= smoothstep(-aa, aa, inner);
                 }
 
                 fixed4 c = i.color;
                 c.a *= alpha;
-                clip(c.a - 0.001);
+                clip(c.a - 0.002);
                 return c;
             }
             ENDCG

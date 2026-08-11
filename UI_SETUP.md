@@ -287,39 +287,81 @@
 
 ### 追加のUnity作業
 
+> **第2版の訂正**: `UICircleImage` は廃止した。`Image` はスプライトを貼る
+> 部品なので、頂点のUVがスプライトの位置に合わせて決まる。そのため
+> 「中心からの距離」を測る計算が成立せず、円ではなく**四角になった**。
+>
+> 代わりに `UICircle` を使う。これは `Image` の置き換えで、四角形とUVを
+> 自分で作るのでこの問題が起きない。スプライトも不要になる。
+
 1. **Always Included Shaders に `ARPointCloud/UICircle` を追加**
    （`ARPointCloud/PointPreview` と同じ場所。2つ並ぶ）
 
-2. **3つのボタンに `UICircleImage` を付ける**
+2. **`UICircleImage` を付けてしまった場合は外す**
 
-   | 対象 | Ring Width | 意味 |
-   |---|---|---|
-   | `FrameCapture`（メモ） | `0` | 塗りつぶした円 |
-   | `CSVButton`（詳細） | `0` | 塗りつぶした円 |
-   | `FrameRecord`（録画） | `0.06` | 細い白リング |
-   | `FrameRecord/Inner` | `0` | 塗りつぶした赤丸 |
+3. **4つの対象で `Image` を `UICircle` に置き換える**
 
-   付けると Source Image は無視されるので、`Knob` のままでよい。
+   各オブジェクトで:
+   - `Image` を右クリック → Remove Component
+   - Add Component → `UI/AR Point Cloud/UI Circle`
+   - ボタンの `Target Graphic` に、その `UICircle` を入れ直す
 
-3. **色を濃くする**（屋外対策）
+   | 対象 | Roundness | Ring Width | Color |
+   |---|---|---|---|
+   | `FrameCapture`（メモ） | `1` | `0` | 白 alpha `0.18` |
+   | `CSVButton`（詳細） | `1` | `0` | 白 alpha `0.18` |
+   | `FrameRecord`（録画） | `1` | `0.055` | 白 alpha `0.95` |
+   | `FrameRecord/Inner` | `1` | `0` | `#EF4B45` |
 
-   | 対象 | 現在 | 変更後 |
-   |---|---|---|
-   | `FrameRecord` | alpha 0.35 | **0.95** |
-   | `FrameCapture` / `CSVButton` | alpha 0.06 | **0.22** |
-   | `CSVButton` の「i」 | alpha 0.31 | **0.85** |
+   `Inner` は `CaptureButtons` が録画中に Roundness を `0.3` へ動かすので、
+   ここでは `1`（円）のままでよい。
 
-4. **`FrameRecord` の子の `Text (TMP)`（「録画」）を削除**
+4. **`CaptureButtons` の接続をやり直す**
 
-5. **`StatusBar` の Image の alpha を `0` にする**
+   項目が変わっている。
+
+   | 項目 | つなぐもの |
+   |---|---|
+   | Capture | `DebugUI` |
+   | Record Inner | `FrameRecord/Inner` の **UICircle** |
+   | Record Inner Rect | 同じものの RectTransform |
+   | Note Label | メモボタンの子の `Text (TMP)` |
+
+   Circle Sprite / Rounded Sprite の項目は無くなった。
+
+5. **`FrameRecord` の子の `Text (TMP)`（「録画」）を削除**
+
+6. **`StatusBar` の Image の alpha を `0` にする**
 
    レンズに寄せるならパネルは消す。文字が読みにくければ、
    `Text (TMP)` の Extra Settings で Outline か Underlay（影）を付けるほうが
-   映像を隠さずに済む。まずパネル無しで屋外を見てから決めるとよい。
+   映像を隠さずに済む。
 
-6. **`Record`（CSVロガー）を左上へ移す**
+7. **`Record`（CSVロガー）を左上へ移す**
 
    いまメモボタンと x 200..274 で重なっている。
+
+### 色の案
+
+明るい屋外で見えることと、映像を殺さないことの両立が要る。
+白の透明度を上げるより、**濃い影を薄く敷いて白を締める**ほうが上品に見える。
+
+| 対象 | 色 | 意図 |
+|---|---|---|
+| 録画リング | `#FFFFFF` alpha `0.95` | ここだけ純白。視線が集まる |
+| 録画の内側 | `#EF4B45` | 朱寄りの赤。純赤 `#FF0000` は安っぽく見える |
+| メモ・詳細ボタン | `#FFFFFF` alpha `0.18` | 存在は分かるが主張しない |
+| ボタンの文字 | `#FFFFFF` alpha `0.9` | |
+| 見出し（撮影できます） | `#5BE58A` | 少し彩度を落とした緑 |
+| 見出し（録画中） | `#FF5A5A` | |
+| 見出し（待機） | `#8FC2FF` | |
+| 見出し（注意） | `#FFC24B` | |
+| 案内文 | `#DDDDDD` | 白より一段落とすと見出しが立つ |
+| 目印の数 | `#9FBEDE` | いちばん弱く |
+
+文字の可読性は色ではなく **Underlay（影）** で稼ぐ。
+`Text (TMP)` の Material → Underlay → Dilate `0.1` / Softness `0.3` /
+Color 黒 alpha `0.7` あたり。これで背景パネル無しでも読める。
 
 ---
 

@@ -216,27 +216,10 @@ public class CaptureGuidance
 
     // ------------------------------------------------------------
     // 画面表示の補助
+    //
+    // 色は持たない。CaptureTheme が Inspector から触れる形で持っている。
+    // ここは「良好か / 注意か / だめか」の判定だけを返す
     // ------------------------------------------------------------
-
-    public string LevelColor => level switch
-    {
-        Level.Ready => "#4CDE6A",
-        Level.Recording => "#FF5A5A",
-        Level.Caution => "#FFC24B",
-        Level.Wait => "#7FB6FF",
-        _ => "#FF5A5A",
-    };
-
-    /// <summary>チェック項目1行分。○△× と色を返す</summary>
-    public static string Mark(int state)
-    {
-        return state switch
-        {
-            2 => "<color=#4CDE6A>○</color>",
-            1 => "<color=#FFC24B>△</color>",
-            _ => "<color=#FF5A5A>×</color>",
-        };
-    }
 
     public int SessionState => sessionOk ? 2 : 0;
     public int EarthState => earthOk ? 2 : 0;

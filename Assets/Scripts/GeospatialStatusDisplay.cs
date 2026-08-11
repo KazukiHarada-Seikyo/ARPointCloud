@@ -7,11 +7,11 @@ using UnityEngine.XR.ARSubsystems;
 /// <summary>
 /// 撮影中の画面。
 ///
-/// 上から順に「いま何をすべきか」→「準備できているか」→「細かい数値」。
-/// テスターは上2つだけ見れば足りる。数値は不具合を追うときだけ要る。
+/// 上から順に「いま何をすべきか」→（i を押したとき）「準備できているか」
+/// →「細かい数値」。テスターは一番上だけ見れば足りる。
 ///
 /// UIオブジェクトを増やさず、TextMeshProのリッチテキストで色と大きさを付けている。
-/// Inspectorの組み直しを避けるため。
+/// 色と文字の大きさは Theme にまとめてあり、Inspector で触れる。
 /// </summary>
 public class GeospatialStatusDisplay : MonoBehaviour
 {
@@ -25,9 +25,15 @@ public class GeospatialStatusDisplay : MonoBehaviour
     [SerializeField] private PointCloudPreview _preview;
 
     [Tooltip("細かい数値を出すか。テスターに渡すときは切っておく")]
-    [SerializeField] private bool _showDetail = true;
+    [SerializeField] private bool _showDetail;
+
+    [Header("色と文字の大きさ")]
+    [SerializeField] private CaptureTheme _theme = new CaptureTheme();
 
     private readonly CaptureGuidance _guidance = new CaptureGuidance();
+
+    /// <summary>色づかい。他のスクリプトから読みたいとき用</summary>
+    public CaptureTheme Theme => _theme;
 
     /// <summary>ボタンから呼ぶ。数値の表示を出し入れする</summary>
     public void ToggleDetail() => _showDetail = !_showDetail;
@@ -52,25 +58,31 @@ public class GeospatialStatusDisplay : MonoBehaviour
 
     private string Headline()
     {
-        string c = _guidance.LevelColor;
+        Color c = _theme.HeadlineColor(_guidance.level);
 
         // 見出しは大きく短く。読む前に色で状態が分かるようにする
-        string s = $"<size=170%><b><color={c}>{_guidance.headline}</color></b></size>\n";
+        string s = $"<size={_theme.headlineSize}%><b>"
+                   + CaptureTheme.Wrap(_guidance.headline, c)
+                   + "</b></size>\n";
 
         if (_guidance.level == CaptureGuidance.Level.Recording && _capture != null)
         {
             int sec = Mathf.FloorToInt(_capture.RecordingSeconds);
-            s += $"<size=140%><color={c}>{sec / 60}:{sec % 60:00}"
-                 + $"　{_capture.SavedCount}枚</color></size>\n";
+            s += $"<size={_theme.recordingSize}%>"
+                 + CaptureTheme.Wrap($"{sec / 60}:{sec % 60:00}　{_capture.SavedCount}枚", c)
+                 + "</size>\n";
         }
 
-        s += $"<size=95%><color=#DDDDDD>{_guidance.advice}</color></size>\n";
+        s += $"<size={_theme.adviceSize}%>"
+             + CaptureTheme.Wrap(_guidance.advice, _theme.advice) + "</size>\n";
 
         // 特徴点の数は「認識できている量」の手応えになる。
         // ただしこれは完成する点群ではないので、そう読める書き方は避ける
         if (_preview != null && _preview.PointCount > 0)
         {
-            s += $"<size=80%><color=#9FBEDE>目印 {_preview.PointCount:N0}</color></size>\n";
+            s += $"<size={_theme.pointCountSize}%>"
+                 + CaptureTheme.Wrap($"目印 {_preview.PointCount:N0}", _theme.pointCount)
+                 + "</size>\n";
         }
 
         return s;
@@ -109,23 +121,24 @@ public class GeospatialStatusDisplay : MonoBehaviour
                       _capture.FreeMegabytes < 0
                           ? "-" : $"{_capture.FreeMegabytes / 1024f:F1} GB");
 
-            s += $"  <color=#888888>メモ</color>   "
-                 + $"<color=#FFC24B>{_capture.Note}</color>\n";
+            s += "  " + CaptureTheme.Wrap("メモ", _theme.label) + "   "
+                 + CaptureTheme.Wrap(_capture.Note, _theme.noteValue) + "\n";
         }
 
         if (_guidance.extrapolating)
         {
-            s += $"<color=#FFC24B>  ※ 精度の値が {_guidance.frozenSeconds:F0} 秒"
-                 + "動いていません（外挿の疑い）</color>\n";
+            s += CaptureTheme.Wrap(
+                $"  ※ 精度の値が {_guidance.frozenSeconds:F0} 秒動いていません（外挿の疑い）",
+                _theme.warning) + "\n";
         }
 
         return s;
     }
 
-    private static string Line(int state, string label, string value)
+    private string Line(int state, string label, string value)
     {
-        return $"  {CaptureGuidance.Mark(state)} <color=#CCCCCC>{label}</color>"
-               + $"   {value}\n";
+        return $"  {_theme.Mark(state)} {CaptureTheme.Wrap(label, _theme.label)}"
+               + $"   {CaptureTheme.Wrap(value, _theme.value)}\n";
     }
 
     // ------------------------------------------------------------
@@ -134,7 +147,7 @@ public class GeospatialStatusDisplay : MonoBehaviour
 
     private string Detail()
     {
-        string s = "<size=80%><color=#999999>";
+        string s = "";
 
         if (_capture != null)
         {
@@ -165,8 +178,9 @@ public class GeospatialStatusDisplay : MonoBehaviour
 
         var local = _arCamera.transform.position;
         s += $"ローカル X:{local.x:F2} Y:{local.y:F2} Z:{local.z:F2}";
-        s += "</color></size>";
-        return s;
+
+        return $"\n<size={_theme.detailSize}%>"
+               + CaptureTheme.Wrap(s, _theme.detail) + "</size>";
     }
 
     // EUN座標（X+=東, Y+=上, Z+=北）での前方向から、真北を0度とした方位角を出す

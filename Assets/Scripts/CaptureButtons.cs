@@ -6,7 +6,7 @@ using UnityEngine;
 ///
 /// カメラアプリと同じ約束事にしてある。
 ///   待機中: 赤い丸（大きい）
-///   録画中: 赤い角丸の四角（小さい）
+///   録画中: 赤い角丸の四角（小さい）＋ゆっくり脈打つ
 ///
 /// この「丸→四角」は説明が要らない合図で、初見のテスターでも意味が分かる。
 /// 逆に言うと、ここを独自の見た目にすると途端に分からなくなる。
@@ -14,14 +14,14 @@ using UnityEngine;
 /// 形は UICircle の Roundness を動かして変える。スプライトの差し替えではなく
 /// 計算で描いているので、変形の途中も輪郭が滑らかなまま。
 ///
-/// 使い方は UI_SETUP.md を参照。
+/// 使い方は UI_SETUP_V2.md を参照。
 /// </summary>
 public class CaptureButtons : MonoBehaviour
 {
     [SerializeField] private FrameCapture _capture;
 
     [Header("録画ボタン")]
-    [Tooltip("赤い内側の丸。RecordButton の子に置いた UICircle")]
+    [Tooltip("赤い内側の丸。FrameRecord の子に置いた UICircle")]
     [SerializeField] private UICircle _recordInner;
 
     [Tooltip("内側の丸の RectTransform。大きさを変えるために要る")]
@@ -39,14 +39,27 @@ public class CaptureButtons : MonoBehaviour
 
     [SerializeField] private float _transitionSeconds = 0.18f;
 
+    [Header("録画中の脈動")]
+    [Tooltip("録画中にゆっくり大きさを揺らす幅。0で止まる")]
+    [SerializeField, Range(0f, 0.2f)] private float _pulseAmount = 0.06f;
+
+    [Tooltip("脈動の速さ（1秒あたりの往復）")]
+    [SerializeField, Range(0.1f, 3f)] private float _pulseSpeed = 0.8f;
+
     [Header("メモボタン")]
     [Tooltip("メモボタンの中の文字。いま何が選ばれているかを出す")]
     [SerializeField] private TextMeshProUGUI _noteLabel;
+
+    [Tooltip("メモが切り替わった瞬間に弾ませる。未設定でも動く")]
+    [SerializeField] private UIButtonJuice _noteJuice;
+
+    [SerializeField] private float _noteKick = 3.2f;
 
     [SerializeField] private Color _noteIdleColor = new Color(1f, 1f, 1f, 0.45f);
     [SerializeField] private Color _noteSetColor = new Color(1f, 0.76f, 0.29f, 1f);
 
     private float _t;
+    private string _lastNote;
 
     private void Update()
     {
@@ -58,10 +71,19 @@ public class CaptureButtons : MonoBehaviour
             ? target
             : Mathf.MoveTowards(_t, target, Time.unscaledDeltaTime / _transitionSeconds);
 
+        float size = Mathf.Lerp(_idleSize, _recordingSize, _t);
+
+        // 録画中だけゆっくり脈打たせる。
+        // 「動いている」ことが遠目にも分かるので、撮り忘れ・止め忘れが減る
+        if (recording && _pulseAmount > 0f)
+        {
+            float phase = Time.unscaledTime * _pulseSpeed * Mathf.PI * 2f;
+            size *= 1f + Mathf.Sin(phase) * _pulseAmount;
+        }
+
         if (_recordInnerRect != null)
         {
-            float s = Mathf.Lerp(_idleSize, _recordingSize, _t);
-            _recordInnerRect.sizeDelta = new Vector2(s, s);
+            _recordInnerRect.sizeDelta = new Vector2(size, size);
         }
 
         if (_recordInner != null)
@@ -70,13 +92,30 @@ public class CaptureButtons : MonoBehaviour
                 Mathf.Lerp(_idleRoundness, _recordingRoundness, _t);
         }
 
-        if (_noteLabel != null && _capture != null)
+        UpdateNote();
+    }
+
+    private void UpdateNote()
+    {
+        if (_capture == null) return;
+
+        string note = _capture.Note;
+
+        if (_noteLabel != null && _noteLabel.text != note)
         {
-            string note = _capture.Note;
-            if (_noteLabel.text != note) _noteLabel.text = note;
+            _noteLabel.text = note;
 
             // 未設定のときだけ控えめにして、選ばれていることを分かりやすくする
             _noteLabel.color = note == "-" ? _noteIdleColor : _noteSetColor;
         }
+
+        // 切り替わった瞬間だけ弾ませる。押した手応えとは別に、
+        // 「値が変わった」ことを目で分かるようにする
+        if (_lastNote != null && _lastNote != note && _noteJuice != null)
+        {
+            _noteJuice.Kick(_noteKick);
+        }
+
+        _lastNote = note;
     }
 }

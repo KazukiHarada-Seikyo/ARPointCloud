@@ -89,7 +89,7 @@ public class FrameCapture : MonoBehaviour
         "local_px,local_py,local_pz,local_qx,local_qy,local_qz,local_qw," +
         "lat,lon,alt_ellipsoid,eun_qx,eun_qy,eun_qz,eun_qw,acc_h,acc_v,acc_yaw," +
         "filename,img_w,img_h,fx,fy,cx,cy," +
-        "angular_speed_deg_s";
+        "angular_speed_deg_s,screen_orientation";
 
     // ------------------------------------------------------------
     // ライフサイクル
@@ -344,6 +344,12 @@ public class FrameCapture : MonoBehaviour
                 hasIntrinsics = hasIntrinsics,
                 intrinsics = k,
                 angularSpeed = angularSpeed,
+
+                // AR Foundationが返す姿勢は「画面の向き」に合わせたもの。
+                // 一方 CPU画像は「センサーの向き」そのまま。端末を縦に持つと
+                // 両者は90度ずれる。PC側で戻せるように、向きを生値で残す
+                screenOrientation = Screen.orientation,
+
                 isStreaming = stream,
             };
 
@@ -368,6 +374,7 @@ public class FrameCapture : MonoBehaviour
         public bool hasIntrinsics;
         public XRCameraIntrinsics intrinsics;
         public string angularSpeed;
+        public ScreenOrientation screenOrientation;
         public bool isStreaming;
     }
 
@@ -491,6 +498,7 @@ public class FrameCapture : MonoBehaviour
             G(row.hasIntrinsics, k.principalPoint.y, "F3"),
 
             row.angularSpeed,
+            row.screenOrientation.ToString(),
         }));
     }
 

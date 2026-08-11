@@ -73,8 +73,15 @@ def quat_to_axes(x, y, z, w):
     return right, up, forward
 
 
-def unity_pose_to_colmap(px, py, pz, qx, qy, qz, qw):
+def unity_pose_to_colmap(px, py, pz, qx, qy, qz, qw, roll_deg=0):
     """Unityの姿勢を、COLMAPの world-to-camera (四元数と平行移動) に変換する。
+
+    roll_deg は、視線軸まわりに姿勢を回す量 (0/90/180/270)。
+
+      AR Foundation がUnityカメラに与える姿勢は「画面の向き」に合わせたもの。
+      一方 TryAcquireLatestCpuImage が返すのは「センサーそのままの横向き」画像。
+      端末を縦に持って撮ると、この2つは90度ずれる。
+      画像を回さずに保存している以上、姿勢側をここで合わせる。
 
     戻り値: (qw, qx, qy, qz), (tx, ty, tz)
     """
@@ -91,6 +98,14 @@ def unity_pose_to_colmap(px, py, pz, qx, qy, qz, qw):
     cx = s(right)
     cy = neg(s(up))
     cz = s(forward)
+
+    # 視線軸まわりの回転。R_c2w' = R_c2w * Rz なので、列を組み替えるだけで済む
+    if roll_deg:
+        c = round(math.cos(math.radians(roll_deg)))
+        sn = round(math.sin(math.radians(roll_deg)))
+        nx = tuple(c * cx[i] + sn * cy[i] for i in range(3))
+        ny = tuple(-sn * cx[i] + c * cy[i] for i in range(3))
+        cx, cy = nx, ny
 
     # 転置すると world-to-camera。行がそのまま cx, cy, cz になる
     r = (cx, cy, cz)
@@ -160,6 +175,22 @@ def determinant(r):
 # 本体
 # ----------------------------------------------------------------------
 
+# 画面の向き → 視線軸まわりに姿勢を回すべき量(度)
+#
+# AR Foundation の姿勢は画面の向きに合わせたもの、CPU画像はセンサーの向き。
+# 端末を回すとこの2つのずれ方が変わるので、向きごとに戻す量が違う。
+#
+# Portrait は実データで確認済み(点が2,815 → 30,023 に増えた)。
+# 残る3つは幾何から導いた値で、未検証。撮り分ける機会があれば確かめること。
+ROLL_BY_ORIENTATION = {
+    "Portrait": 90,
+    "PortraitUpsideDown": 270,
+    "LandscapeLeft": 0,
+    "LandscapeRight": 180,
+}
+VERIFIED_ORIENTATIONS = {"Portrait"}
+
+
 def load_rows(csv_path):
     with open(csv_path, newline="", encoding="utf-8") as f:
         return list(csv.DictReader(f))
@@ -181,6 +212,11 @@ def main():
                     help="Nコマに1枚だけ使う (既定 1 = 全部)")
     ap.add_argument("--out", default=None,
                     help="出力先 (既定: <rec_dir>/sparse)")
+    ap.add_argument("--camera-roll", type=int, default=None,
+                    choices=[0, 90, 180, 270], metavar="DEG",
+                    help="視線軸まわりに姿勢を回す量を手で指定する。"
+                         "既定はCSVの screen_orientation 列から自動判定。"
+                         "列が無い古いCSVでは必ず指定すること")
     ap.add_argument("--database", default=None, metavar="DB",
                     help="COLMAPのdatabase.db。画像IDをこちらに合わせる。"
                          "feature_extractor を先に走らせた場合は必ず指定すること")
@@ -259,6 +295,35 @@ def main():
             if not kept:
                 sys.exit("DBと突き合わせた結果、使えるコマが残りませんでした")
 
+    # --- 姿勢を回す量 ---------------------------------------------------
+    if args.camera_roll is not None:
+        roll_of = {r["filename"]: args.camera_roll for r in kept}
+        print(f"視線軸まわりの回転: {args.camera_roll}度 (手動指定)")
+    elif "screen_orientation" in kept[0] and kept[0]["screen_orientation"]:
+        roll_of = {}
+        unknown = set()
+        for r in kept:
+            o = r["screen_orientation"]
+            if o not in ROLL_BY_ORIENTATION:
+                unknown.add(o)
+            roll_of[r["filename"]] = ROLL_BY_ORIENTATION.get(o, 0)
+
+        seen = sorted({r["screen_orientation"] for r in kept})
+        print("視線軸まわりの回転: " + ", ".join(
+            f"{o}→{ROLL_BY_ORIENTATION.get(o, 0)}度" for o in seen))
+
+        unverified = [o for o in seen if o not in VERIFIED_ORIENTATIONS]
+        if unverified:
+            print(f"  ※ {', '.join(unverified)} は未検証の値。"
+                  "点が起きないときは --camera-roll で他の値も試すこと")
+        if unknown:
+            print(f"  ※ 未知の向き {unknown} は0度として扱った")
+    else:
+        sys.exit(
+            "screen_orientation 列がありません(この列を書く前に撮ったCSVです)。\n"
+            "--camera-roll で回転量を指定してください。\n"
+            "端末を縦に持って撮ったなら 90 です。")
+
     # --- 内部パラメータ -----------------------------------------------
     # フォーカスと再校正で毎コマ動きうるので、ばらつきを見てから代表値を決める
     fxs = [float(r["fx"]) for r in kept]
@@ -313,7 +378,7 @@ def main():
             det_min, det_max = min(det_min, d), max(det_max, d)
 
             (w_, x_, y_, z_), (tx, ty, tz) = unity_pose_to_colmap(
-                px, py, pz, qx, qy, qz, qw)
+                px, py, pz, qx, qy, qz, qw, roll_of[r["filename"]])
 
             f.write(f"{image_id} {w_:.9f} {x_:.9f} {y_:.9f} {z_:.9f} "
                     f"{tx:.9f} {ty:.9f} {tz:.9f} 1 {r['filename']}\n")

@@ -433,6 +433,22 @@ public class FrameCapture : MonoBehaviour
         return oldest;
     }
 
+    /// <summary>
+    /// 直近の撮影の frames.csv だけを共有シートに出す。
+    ///
+    /// 写真は数百MBあって現地では送れないが、CSVは数百KBなので送れる。
+    /// 姿勢と精度がその場で確認できるので、条件の悪い場所で撮り続けて
+    /// しまう事故を防げる。写真そのものはUSBで持ち帰る。
+    /// </summary>
+    public void ShareFramesCsv()
+    {
+        // 停止処理の途中はまだ書き込みが残っている。閉じきるまで待つ
+        if (_writer != null)
+        {
+            SetNotice("録画中です。止めてから共有してください");
+            return;
+        }
+
         var dir = new DirectoryInfo(Application.persistentDataPath);
         DirectoryInfo latest = null;
 
@@ -452,9 +468,8 @@ public class FrameCapture : MonoBehaviour
         var info = new FileInfo(csv);
         int jpgCount = latest.GetFiles("*.jpg").Length;
 
-        LastMessage = $"共有 {latest.Name}/frames.csv\n"
-                      + $"{info.Length / 1024f:F0}KB / 写真{jpgCount}枚は端末に残ります";
-        Debug.Log(LastMessage);
+        SetNotice($"共有 {latest.Name}/frames.csv\n"
+                  + $"{info.Length / 1024f:F0}KB / 写真{jpgCount}枚は端末に残ります");
 
         new NativeShare()
             .AddFile(csv)

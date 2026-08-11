@@ -107,6 +107,38 @@ public static class CaptureUiFixer
             so.ApplyModifiedProperties();
         }
 
+        // --- 6.5. タップが届かない原因を潰す ---------------------------
+        //
+        // Canvas は「後ろの子ほど手前」で、タップも手前が勝つ。
+        // Panel は文字を StatusBar へ移したあとの抜け殻で、透明なのに
+        // Raycast Target が入ったまま全画面を覆っている。
+        // その後ろに置かれたボタンは押せなくなる。
+        var panel = Find("Panel");
+        var panelImage = panel != null ? panel.GetComponent<Image>() : null;
+        if (panelImage != null && panelImage.raycastTarget)
+        {
+            Undo.RecordObject(panelImage, "raycast");
+            panelImage.raycastTarget = false;
+            EditorUtility.SetDirty(panelImage);
+            log.AppendLine("  Panel: 透明なのにタップを奪っていたので Raycast Target を切った");
+            changed++;
+        }
+
+        // 押せるボタンは Panel より手前に置く。念のため最前面へ回す
+        foreach (var name in new[] { "Record", "DeleteButton" })
+        {
+            var go = Find(name);
+            if (go == null) continue;
+            var tr = go.transform;
+            if (tr.GetSiblingIndex() == tr.parent.childCount - 1) continue;
+
+            Undo.RecordObject(tr, "sibling order");
+            tr.SetAsLastSibling();
+            EditorUtility.SetDirty(tr);
+            log.AppendLine($"  {name}: 最前面へ移した（Panel の裏だと押せない）");
+            changed++;
+        }
+
         // --- 7. 削除ボタンの文字 ---------------------------------------
         var delText = Find("DeleteButton")?.GetComponentInChildren<TextMeshProUGUI>();
         if (delText != null && delText.text != "削除")

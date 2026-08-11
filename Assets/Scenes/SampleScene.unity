@@ -470,8 +470,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CaptureButtons
   _capture: {fileID: 89092446}
-  _recordInner: {fileID: 0}
-  _recordInnerRect: {fileID: 0}
+  _recordInner: {fileID: 2074247621}
+  _recordInnerRect: {fileID: 2074247620}
   _idleSize: 150
   _recordingSize: 78
   _idleRoundness: 1
@@ -480,7 +480,7 @@ MonoBehaviour:
   _pulseAmount: 0.06
   _pulseSpeed: 0.8
   _noteLabel: {fileID: 1657526310}
-  _noteJuice: {fileID: 0}
+  _noteJuice: {fileID: 594090052}
   _noteKick: 3.2
   _noteIdleColor: {r: 1, g: 1, b: 1, a: 0.45}
   _noteSetColor: {r: 1, g: 0.76, b: 0.29, a: 1}
@@ -888,7 +888,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UICircleImage
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 0.18}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -1441,7 +1441,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UICircleImage
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 0.18}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -1750,13 +1750,13 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 89092443}
-        m_TargetAssemblyTypeName: GeospatialCsvLogger, Assembly-CSharp
-        m_MethodName: ToggleRecording
-        m_Mode: 1
+      - m_Target: {fileID: 89092446}
+        m_TargetAssemblyTypeName: FrameCapture, Assembly-CSharp
+        m_MethodName: DeleteOldestRecording
+        m_Mode: 0
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_ObjectArgumentAssemblyTypeName: 
           m_IntArgument: 0
           m_FloatArgument: 0
           m_StringArgument: 
@@ -2534,7 +2534,6 @@ GameObject:
   m_Component:
   - component: {fileID: 2044097823}
   - component: {fileID: 2044097826}
-  - component: {fileID: 2044097825}
   - component: {fileID: 2044097824}
   - component: {fileID: 2044097827}
   m_Layer: 5
@@ -2605,7 +2604,7 @@ MonoBehaviour:
     m_SelectedTrigger: Selected
     m_DisabledTrigger: Disabled
   m_Interactable: 1
-  m_TargetGraphic: {fileID: 2044097825}
+  m_TargetGraphic: {fileID: 2044097827}
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
@@ -2621,36 +2620,6 @@ MonoBehaviour:
           m_StringArgument: 
           m_BoolArgument: 0
         m_CallState: 2
---- !u!114 &2044097825
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2044097822}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
-  m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 0.8}
-  m_RaycastTarget: 1
-  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
-  m_Maskable: 1
-  m_OnCullStateChanged:
-    m_PersistentCalls:
-      m_Calls: []
-  m_Sprite: {fileID: 0}
-  m_Type: 0
-  m_PreserveAspect: 0
-  m_FillCenter: 1
-  m_FillMethod: 4
-  m_FillAmount: 1
-  m_FillClockwise: 1
-  m_FillOrigin: 0
-  m_UseSpriteMesh: 0
-  m_PixelsPerUnitMultiplier: 1
 --- !u!222 &2044097826
 CanvasRenderer:
   m_ObjectHideFlags: 0
@@ -2672,7 +2641,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UICircleImage
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 0.95}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -2680,7 +2649,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls: []
   _roundness: 1
-  _ringWidth: 0
+  _ringWidth: 0.055
   _softness: 0.5
 --- !u!1 &2074247617
 GameObject:
@@ -2741,8 +2710,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UICircleImage
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 0, b: 0, a: 1}
-  m_RaycastTarget: 1
+  m_Color: {r: 1, g: 0.03529412, b: 0, a: 1}
+  m_RaycastTarget: 0
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
   m_OnCullStateChanged:
@@ -2826,7 +2795,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Delete
+  m_text: "\u524A\u9664"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: a7244d29bc57c8e4e992f36a7251b733, type: 2}
   m_sharedMaterial: {fileID: -881767315338036961, guid: a7244d29bc57c8e4e992f36a7251b733, type: 2}

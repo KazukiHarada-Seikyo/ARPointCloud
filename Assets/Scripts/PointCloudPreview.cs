@@ -71,7 +71,17 @@ public class PointCloudPreview : MonoBehaviour
     // 別の識別子を振り直すことがある。すると毎回「新しい点」と判定されて
     // 光り直すので、画面が激しく点滅した。位置で判断すれば起きない。
     private readonly Dictionary<long, Entry> _points = new Dictionary<long, Entry>();
-    private readonly List<long> _order = new List<long>();
+
+    // 上限を超えたとき古いものから捨てる。List だと先頭削除で全体がずれるので
+    // (12000点だと毎回12000要素の移動)、Queue にして O(1) にする
+    private readonly Queue<long> _order = new Queue<long>();
+
+    // 中身が変わっていなければメッシュを作り直さない。
+    // 撮影中はここが効く
+    private bool _dirty;
+
+    // いちばん新しい点が現れた時刻。演出が終わったかの判定に使う
+    private float _newestBornAt = -999f;
 
     private Mesh _mesh;
     private Material _material;
@@ -158,6 +168,7 @@ public class PointCloudPreview : MonoBehaviour
     {
         _points.Clear();
         _order.Clear();
+        _dirty = true;
         if (_mesh != null) _mesh.Clear();
     }
 
@@ -198,15 +209,17 @@ public class PointCloudPreview : MonoBehaviour
             else
             {
                 _points[key] = new Entry { world = world, bornAt = now };
-                _order.Add(key);
+                _newestBornAt = now;
+                _order.Enqueue(key);
+                _dirty = true;
             }
         }
 
         // 上限を超えたら古いものから捨てる
         while (_order.Count > _maxPoints)
         {
-            _points.Remove(_order[0]);
-            _order.RemoveAt(0);
+            _points.Remove(_order.Dequeue());
+            _dirty = true;
         }
     }
 
@@ -234,6 +247,13 @@ public class PointCloudPreview : MonoBehaviour
         if (Time.time < _nextRebuild) return;
         _nextRebuild = Time.time + _rebuildInterval;
 
+        // 新しい点が増えておらず、演出中の点も無いなら作り直す意味がない。
+        // 撮影中に端末が熱を持つと1フレームの余裕が無くなるので、
+        // ここで無駄な作り直しを止めておく
+        bool animating = Time.time - _newestBornAt < _settleSeconds;
+        if (!_dirty && !animating) return;
+        _dirty = false;
+
         Rebuild();
     }
 
@@ -254,9 +274,9 @@ public class PointCloudPreview : MonoBehaviour
 
         int v = 0;
         int t = 0;
-        for (int i = 0; i < count; i++)
+        foreach (long key in _order)
         {
-            if (!_points.TryGetValue(_order[i], out Entry e)) continue;
+            if (!_points.TryGetValue(key, out Entry e)) continue;
 
             // 0 = 現れた瞬間, 1 = 落ち着いた
             float age = Mathf.Clamp01((now - e.bornAt) / _settleSeconds);

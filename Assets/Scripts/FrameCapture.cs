@@ -43,6 +43,14 @@ public class FrameCapture : MonoBehaviour
     [Tooltip("未処理の変換がこの数を超えたら、そのコマは見送る(輻輳よけ)")]
     [SerializeField] private int _maxPendingConversions = 4;
 
+    [Header("屋外での安全策")]
+    [Tooltip("撮影中に画面が消えないようにする。消えるとカメラも姿勢も止まる")]
+    [SerializeField] private bool _keepScreenAwake = true;
+
+    [Tooltip("縦持ちに固定する。姿勢と画像のずれ方が画面の向きで変わるため、" +
+             "実データで検証できている Portrait から外れないようにする")]
+    [SerializeField] private bool _lockPortrait = true;
+
     // ------------------------------------------------------------
     // 画面に出す情報
     // ------------------------------------------------------------
@@ -169,6 +177,23 @@ public class FrameCapture : MonoBehaviour
     // ライフサイクル
     // ------------------------------------------------------------
 
+    private void Awake()
+    {
+        // 画面が消えるとカメラも姿勢も止まる。屋外では数分かざし続けるので、
+        // 端末側のスリープ設定に関係なく点けたままにする
+        if (_keepScreenAwake) Screen.sleepTimeout = SleepTimeout.NeverSleep;
+
+        // 縦持ちに固定する。
+        //
+        // AR Foundation が返す姿勢は画面の向きに合わせたもの、CPU画像は
+        // センサーの向きそのまま。両者のずれ方は画面の向きで変わる。
+        // 実データで検証できているのは Portrait だけ(点が10.7倍になった)なので、
+        // 検証済みの経路から外れないように固定する。
+        //
+        // screen_orientation 列には記録し続けるので、あとから確かめられる
+        if (_lockPortrait) Screen.orientation = ScreenOrientation.Portrait;
+    }
+
     private void OnEnable()
     {
         if (_cameraManager != null) _cameraManager.frameReceived += OnFrameReceived;
@@ -240,7 +265,9 @@ public class FrameCapture : MonoBehaviour
     /// </summary>
     public void DeleteOldestRecording()
     {
-        if (IsRecording)
+        // IsRecording は停止処理中に false になる。まだ書き込みが残っている
+        // 可能性があるので、writer が閉じきるまでは触らせない
+        if (_writer != null)
         {
             SetNotice("録画中は消せません。止めてから押してください");
             return;
@@ -302,8 +329,10 @@ public class FrameCapture : MonoBehaviour
 
         foreach (var d in dir.GetDirectories("rec_*"))
         {
-            // 撮影中のフォルダは対象から外す
-            if (_sessionDir != null &&
+            // 「いま書いている」フォルダだけ外す。
+            // _sessionDir は停止後も残るので、これを無条件に外すと
+            // 直前に撮ったものが永久に消せなくなる
+            if (_writer != null && _sessionDir != null &&
                 string.Equals(d.FullName, _sessionDir, StringComparison.Ordinal))
                 continue;
 
@@ -323,9 +352,10 @@ public class FrameCapture : MonoBehaviour
     /// </summary>
     public void ShareFramesCsv()
     {
-        if (IsRecording)
+        // 停止処理の途中はまだ書き込みが残っている。閉じきるまで待つ
+        if (_writer != null)
         {
-            LastMessage = "録画中です。止めてから共有してください";
+            SetNotice("録画中です。止めてから共有してください");
             return;
         }
 
@@ -340,8 +370,7 @@ public class FrameCapture : MonoBehaviour
 
         if (latest == null)
         {
-            LastMessage = "撮影データがありません";
-            Debug.LogWarning(LastMessage);
+            SetNotice("撮影データがありません");
             return;
         }
 
@@ -415,7 +444,7 @@ public class FrameCapture : MonoBehaviour
         }
         catch (Exception e)
         {
-            LastMessage = $"録画を開始できません: {e.Message}";
+            SetNotice($"録画を開始できません: {e.Message}");
             Debug.LogException(e);
             _writer = null;
             return;
@@ -609,8 +638,7 @@ public class FrameCapture : MonoBehaviour
         {
             if (status != XRCpuImage.AsyncConversionStatus.Ready)
             {
-                LastMessage = $"変換失敗: {status}";
-                Debug.LogWarning(LastMessage);
+                SetNotice($"変換失敗: {status}");
                 return;
             }
 
@@ -639,7 +667,7 @@ public class FrameCapture : MonoBehaviour
             }
             catch (Exception e)
             {
-                LastMessage = $"保存失敗: {e.Message}";
+                SetNotice($"保存失敗: {e.Message}");
                 Debug.LogException(e);
                 return;
             }
@@ -789,9 +817,8 @@ public class FrameCapture : MonoBehaviour
         // 切替でカメラが再起動し、トラッキングが一度リセットされる。
         // だから録画開始より前に済ませておく必要がある
         _cameraManager.currentConfiguration = best.Value;
-        LastMessage = $"解像度を {best.Value.width}x{best.Value.height} に自動設定しました\n" +
-                      "(トラッキングが一度リセットされます)";
-        Debug.Log(LastMessage);
+        SetNotice($"解像度を {best.Value.width}x{best.Value.height} に設定しました。"
+                  + "トラッキングが一度リセットされます");
     }
 
     private bool IsHighestResolutionActive(out string currentText)
@@ -825,7 +852,7 @@ public class FrameCapture : MonoBehaviour
         {
             Debug.LogWarning("空き容量不足のため録画を自動停止します");
             RequestStop();
-            LastMessage = $"空き容量不足で自動停止 ({(freeBytes / 1024f / 1024f):F0}MB)";
+            SetNotice($"空き容量不足で自動停止 ({(freeBytes / 1024f / 1024f):F0}MB)。古い撮影を消してください");
         }
     }
 

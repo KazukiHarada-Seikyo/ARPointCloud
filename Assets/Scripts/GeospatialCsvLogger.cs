@@ -90,7 +90,10 @@ public class GeospatialCsvLogger : MonoBehaviour
         Debug.Log(LastMessage);
     }
 
-    private void StopRecording()
+    /// <param name="allowShare">
+    /// 共有シートを出してよいか。アプリ終了時に出すと固まるので false にする
+    /// </param>
+    private void StopRecording(bool allowShare = true)
     {
         if (_writer == null) return;
 
@@ -104,7 +107,7 @@ public class GeospatialCsvLogger : MonoBehaviour
 
         // ここに来た時点で _writer は null なので、ShareLatestFile を呼んでも
         // StopRecording に戻ってくることはない
-        if (_shareOnStop) ShareLatestFile();
+        if (allowShare && _shareOnStop) ShareLatestFile();
     }
 
     // ------------------------------------------------------------
@@ -114,8 +117,9 @@ public class GeospatialCsvLogger : MonoBehaviour
     /// <summary>共有シートを出して、Driveなどに保存させる</summary>
     public void ShareLatestFile()
     {
-        // 書きかけのまま渡すと途中で切れたファイルが飛ぶので、必ず閉じる
-        if (IsRecording) StopRecording();
+        // 書きかけのまま渡すと途中で切れたファイルが飛ぶので、必ず閉じる。
+        // ここから共有するので、停止側では共有しない
+        if (IsRecording) StopRecording(false);
         RefreshFileCount();
 
         var dir = new DirectoryInfo(Application.persistentDataPath);
@@ -197,5 +201,6 @@ public class GeospatialCsvLogger : MonoBehaviour
         if (paused) _writer?.Flush();
     }
 
-    private void OnApplicationQuit() => StopRecording();
+    // 終了中に共有シートを出すと固まるので、ここでは出さない
+    private void OnApplicationQuit() => StopRecording(false);
 }

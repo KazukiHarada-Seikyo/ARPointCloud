@@ -50,6 +50,26 @@ public class FrameCapture : MonoBehaviour
     /// <summary>直近の操作結果</summary>
     public string LastMessage { get; private set; } = "未撮影";
 
+    /// <summary>
+    /// 利用者に必ず伝えたいこと（録画を断った理由、削除の確認など）。
+    ///
+    /// LastMessage は録画中に毎フレーム書き換わるので、
+    /// 「押したのに始まらない」ような場面の理由がすぐ流れてしまう。
+    /// こちらは押したときだけ更新し、画面の目立つ位置に数秒出す。
+    /// </summary>
+    public string Notice { get; private set; } = "";
+
+    /// <summary>Notice を出した時刻（Time.unscaledTime）</summary>
+    public float NoticeAt { get; private set; } = -999f;
+
+    private void SetNotice(string message)
+    {
+        Notice = message;
+        NoticeAt = Time.unscaledTime;
+        LastMessage = message;
+        Debug.Log(message);
+    }
+
     /// <summary>録画中かどうか（停止処理の最中は false になる）</summary>
     public bool IsRecording => _writer != null && !_stopRequested;
 
@@ -132,6 +152,11 @@ public class FrameCapture : MonoBehaviour
     // 解像度の自動選択は、映像が流れ始めてからでないとできないので1回だけ試す
     private bool _resolutionSelected;
 
+    // 削除の2回押し確認
+    private const float DeleteConfirmSeconds = 6f;
+    private string _deleteArmedFor;
+    private float _deleteArmedAt = -999f;
+
     private const string CsvHeader =
         "unix_ms,frame_timestamp_ns,elapsed_s,frame," +
         "session_state,earth_state,tracking_state," +
@@ -205,6 +230,91 @@ public class FrameCapture : MonoBehaviour
     }
 
     /// <summary>
+    /// いちばん古い撮影フォルダを消す。押すたびに1つずつ古い順に消える。
+    ///
+    /// 取り消せないので2回押させる。1回目は消す対象と枚数を出すだけで、
+    /// 続けてもう一度押したときに初めて消す。数秒放っておくと解除される。
+    ///
+    /// 古い順にしたのは、屋外で容量が尽きたときに「さっき撮ったものは
+    /// 残したい」のが普通だから。
+    /// </summary>
+    public void DeleteOldestRecording()
+    {
+        if (IsRecording)
+        {
+            SetNotice("録画中は消せません。止めてから押してください");
+            return;
+        }
+
+        var oldest = FindOldestRecording();
+        if (oldest == null)
+        {
+            SetNotice("消せる撮影データがありません");
+            _deleteArmedFor = null;
+            return;
+        }
+
+        // 1回目、または対象が変わった、または時間切れ → 確認を出すだけ
+        bool armed = _deleteArmedFor == oldest.Name
+                     && Time.unscaledTime - _deleteArmedAt <= DeleteConfirmSeconds;
+
+        if (!armed)
+        {
+            _deleteArmedFor = oldest.Name;
+            _deleteArmedAt = Time.unscaledTime;
+
+            int photos = oldest.GetFiles("*.jpg").Length;
+            float mb = 0f;
+            foreach (var f in oldest.GetFiles()) mb += f.Length / 1024f / 1024f;
+
+            SetNotice($"もう一度押すと削除します\n"
+                      + $"{oldest.Name} / 写真{photos}枚 / {mb:F0}MB");
+            return;
+        }
+
+        // 2回目 → 実行
+        _deleteArmedFor = null;
+
+        float freedMb = 0f;
+        foreach (var f in oldest.GetFiles()) freedMb += f.Length / 1024f / 1024f;
+
+        try
+        {
+            oldest.Delete(true);
+        }
+        catch (Exception e)
+        {
+            SetNotice($"削除できません: {e.Message}");
+            Debug.LogException(e);
+            return;
+        }
+
+        // 空き容量の表示をすぐ更新する
+        _nextFreeSpaceCheck = 0f;
+
+        SetNotice($"削除しました {oldest.Name}\n{freedMb:F0}MB 空きました");
+    }
+
+    private DirectoryInfo FindOldestRecording()
+    {
+        var dir = new DirectoryInfo(Application.persistentDataPath);
+        DirectoryInfo oldest = null;
+
+        foreach (var d in dir.GetDirectories("rec_*"))
+        {
+            // 撮影中のフォルダは対象から外す
+            if (_sessionDir != null &&
+                string.Equals(d.FullName, _sessionDir, StringComparison.Ordinal))
+                continue;
+
+            // 名前が rec_yyyyMMdd_HHmmss なので、文字列の並びが時刻の並びになる
+            if (oldest == null || d.Name.CompareTo(oldest.Name) < 0) oldest = d;
+        }
+
+        return oldest;
+    }
+
+    /// <summary>
     /// 直近の撮影の frames.csv だけを共有シートに出す。
     ///
     /// 写真は数百MBあって現地では送れないが、CSVは数百KBなので送れる。
@@ -258,13 +368,13 @@ public class FrameCapture : MonoBehaviour
     {
         if (_writer != null)
         {
-            LastMessage = "前回の停止処理がまだ終わっていません";
+            SetNotice("前回の停止処理がまだ終わっていません");
             return;
         }
 
         if (_cameraManager == null || _earthManager == null)
         {
-            LastMessage = "Inspectorの接続が足りません";
+            SetNotice("Inspectorの接続が足りません");
             return;
         }
 
@@ -272,8 +382,7 @@ public class FrameCapture : MonoBehaviour
         // 起動のたびに640x480へ戻るので、ここで必ず確かめる
         if (!IsHighestResolutionActive(out string resNow))
         {
-            LastMessage = $"解像度が {resNow} です。\n最高解像度に切り替えてから録画してください";
-            Debug.LogWarning(LastMessage);
+            SetNotice($"解像度が {resNow} です。切り替わるまで数秒待ってください");
             return;
         }
 
@@ -281,8 +390,7 @@ public class FrameCapture : MonoBehaviour
         // 列が包含関係にあるうえ、書き込みが競合して保存が詰まる
         if (_csvLogger != null && _csvLogger.IsRecording)
         {
-            LastMessage = "CSVロガーが録画中です。先に止めてください";
-            Debug.LogWarning(LastMessage);
+            SetNotice("CSVロガーが録画中です。左上の Record を先に止めてください");
             return;
         }
 
@@ -290,9 +398,8 @@ public class FrameCapture : MonoBehaviour
         long freeBytes = GetFreeBytes();
         if (freeBytes >= 0 && freeBytes < _minFreeMegabytes * 1024L * 1024L)
         {
-            LastMessage = $"空き容量不足 {(freeBytes / 1024f / 1024f):F0}MB\n" +
-                          $"({_minFreeMegabytes}MB以上を空けてください)";
-            Debug.LogWarning(LastMessage);
+            SetNotice($"空き容量不足 {(freeBytes / 1024f / 1024f):F0}MB。"
+                      + "古い撮影を消してください");
             return;
         }
 

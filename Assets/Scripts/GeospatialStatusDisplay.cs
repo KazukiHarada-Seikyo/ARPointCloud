@@ -27,6 +27,9 @@ public class GeospatialStatusDisplay : MonoBehaviour
     [Tooltip("細かい数値を出すか。テスターに渡すときは切っておく")]
     [SerializeField] private bool _showDetail;
 
+    [Tooltip("押したのに始まらない等の理由を、何秒間だけ大きく出すか")]
+    [SerializeField] private float _noticeSeconds = 5f;
+
     [Header("色と文字の大きさ")]
     [SerializeField] private CaptureTheme _theme = new CaptureTheme();
 
@@ -45,7 +48,7 @@ public class GeospatialStatusDisplay : MonoBehaviour
 
     private void Update()
     {
-        _guidance.Tick(_earthManager, _capture);
+        _guidance.Tick(_earthManager, _capture, _logger);
 
         // 既定では案内だけ。チェック項目と数値は「i」を押したときだけ出す。
         // 常時7行出ていると、映像が主役でなくなって道具として使いにくい
@@ -71,6 +74,15 @@ public class GeospatialStatusDisplay : MonoBehaviour
             s += $"<size={_theme.recordingSize}%>"
                  + CaptureTheme.Wrap($"{sec / 60}:{sec % 60:00}　{_capture.SavedCount}枚", c)
                  + "</size>\n";
+        }
+
+        // 押したのに始まらない、削除の確認など。理由が見えないと詰まるので、
+        // 詳細表示の有無に関係なく、ここに数秒だけ大きく出す
+        if (_capture != null && !string.IsNullOrEmpty(_capture.Notice)
+            && Time.unscaledTime - _capture.NoticeAt < _noticeSeconds)
+        {
+            s += $"<size={_theme.adviceSize}%>"
+                 + CaptureTheme.Wrap(_capture.Notice, _theme.warning) + "</size>\n";
         }
 
         s += $"<size={_theme.adviceSize}%>"

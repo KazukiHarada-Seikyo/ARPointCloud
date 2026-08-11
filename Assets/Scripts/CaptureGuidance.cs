@@ -64,7 +64,8 @@ public class CaptureGuidance
     private float _frozenSince = -1f;
     private bool _hasLast;
 
-    public void Tick(AREarthManager earth, FrameCapture capture)
+    public void Tick(AREarthManager earth, FrameCapture capture,
+                     GeospatialCsvLogger logger = null)
     {
         sessionOk = ARSession.state == ARSessionState.SessionTracking;
         earthOk = earth != null && earth.EarthTrackingState == TrackingState.Tracking;
@@ -87,7 +88,7 @@ public class CaptureGuidance
             frozenSeconds = 0f;
         }
 
-        Decide(capture);
+        Decide(capture, logger);
     }
 
     /// <summary>
@@ -123,7 +124,7 @@ public class CaptureGuidance
         _hasLast = true;
     }
 
-    private void Decide(FrameCapture capture)
+    private void Decide(FrameCapture capture, GeospatialCsvLogger logger)
     {
         // 録画中は別の案内に切り替える
         if (capture != null && capture.IsRecording)
@@ -155,6 +156,16 @@ public class CaptureGuidance
             level = Level.Wait;
             headline = "準備中";
             advice = "ゆっくり左右に動かしてください";
+            return;
+        }
+
+        // これが原因で「押しても録画が始まらない」が起きる。
+        // 理由が画面に出ていないと延々と悩むことになるので、見出しに出す
+        if (logger != null && logger.IsRecording)
+        {
+            level = Level.Blocked;
+            headline = "CSVロガーが動いています";
+            advice = "左上の Record を先に止めてください";
             return;
         }
 

@@ -21,6 +21,9 @@ public class GeospatialStatusDisplay : MonoBehaviour
     [SerializeField] private GeospatialCsvLogger _logger;
     [SerializeField] private FrameCapture _capture;
 
+    [Tooltip("特徴点の重ね描き。未設定でも動く")]
+    [SerializeField] private PointCloudPreview _preview;
+
     [Tooltip("細かい数値を出すか。テスターに渡すときは切っておく")]
     [SerializeField] private bool _showDetail = true;
 
@@ -55,6 +58,14 @@ public class GeospatialStatusDisplay : MonoBehaviour
             int sec = Mathf.FloorToInt(_capture.RecordingSeconds);
             s += $"<size=130%><color={c}>{sec / 60}:{sec % 60:00}"
                  + $"   {_capture.SavedCount}枚</color></size>\n";
+        }
+
+        // 特徴点の数は「認識できている量」の手応えになる。
+        // ただしこれは完成する点群ではないので、そう読める書き方は避ける
+        if (_preview != null && _preview.PointCount > 0)
+        {
+            s += $"<size=90%><color=#8FD6A6>認識中の目印 "
+                 + $"{_preview.PointCount:N0}</color></size>\n";
         }
 
         s += $"{_guidance.advice}\n";

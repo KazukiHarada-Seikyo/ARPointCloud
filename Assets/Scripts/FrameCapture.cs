@@ -289,8 +289,7 @@ public class FrameCapture : MonoBehaviour
         {
             _deleteArmedFor = target.Name;
             _deleteArmedAt = Time.unscaledTime;
-            SetNotice($"もう一度押すと削除します
-{target.Describe()}");
+            SetNotice("もう一度押すと削除します\n" + target.Describe());
             return;
         }
 
@@ -312,8 +311,7 @@ public class FrameCapture : MonoBehaviour
         // 空き容量の表示をすぐ更新する
         _nextFreeSpaceCheck = 0f;
 
-        SetNotice($"削除しました {target.Name}
-{freedMb:F0}MB 空きました");
+        SetNotice($"削除しました {target.Name}\n{freedMb:F0}MB 空きました");
     }
 
     /// <summary>消す対象。撮影フォルダとCSVを同じ土俵で扱う</summary>

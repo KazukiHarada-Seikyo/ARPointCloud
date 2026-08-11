@@ -23,6 +23,10 @@ public class GeospatialCsvLogger : MonoBehaviour
     [Tooltip("同時に走らせないための相互ガード")]
     [SerializeField] private FrameCapture _frameCapture;
 
+    [Tooltip("録画を止めたら、そのまま共有シートを出す。" +
+             "現地でDriveへ送れるので、持ち帰る前に中身を確認できる")]
+    [SerializeField] private bool _shareOnStop = true;
+
     private StreamWriter _writer;
     private string _path;
     private int _frame;
@@ -97,6 +101,10 @@ public class GeospatialCsvLogger : MonoBehaviour
         RefreshFileCount();
         LastMessage = $"録画停止 {_frame}行";
         Debug.Log(LastMessage);
+
+        // ここに来た時点で _writer は null なので、ShareLatestFile を呼んでも
+        // StopRecording に戻ってくることはない
+        if (_shareOnStop) ShareLatestFile();
     }
 
     // ------------------------------------------------------------

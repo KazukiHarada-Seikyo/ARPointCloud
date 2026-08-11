@@ -4,6 +4,15 @@ using UnityEngine;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 
+/// <summary>
+/// 撮影中の画面。
+///
+/// 上から順に「いま何をすべきか」→「準備できているか」→「細かい数値」。
+/// テスターは上2つだけ見れば足りる。数値は不具合を追うときだけ要る。
+///
+/// UIオブジェクトを増やさず、TextMeshProのリッチテキストで色と大きさを付けている。
+/// Inspectorの組み直しを避けるため。
+/// </summary>
 public class GeospatialStatusDisplay : MonoBehaviour
 {
     [SerializeField] private AREarthManager _earthManager;
@@ -12,6 +21,14 @@ public class GeospatialStatusDisplay : MonoBehaviour
     [SerializeField] private GeospatialCsvLogger _logger;
     [SerializeField] private FrameCapture _capture;
 
+    [Tooltip("細かい数値を出すか。テスターに渡すときは切っておく")]
+    [SerializeField] private bool _showDetail = true;
+
+    private readonly CaptureGuidance _guidance = new CaptureGuidance();
+
+    /// <summary>ボタンから呼ぶ。数値の表示を出し入れする</summary>
+    public void ToggleDetail() => _showDetail = !_showDetail;
+
     private void Start()
     {
         Input.location.Start();
@@ -19,56 +36,124 @@ public class GeospatialStatusDisplay : MonoBehaviour
 
     private void Update()
     {
-        // 1段目：端末が対応しているか
-        var supported = _earthManager.IsGeospatialModeSupported(GeospatialMode.Enabled);
+        _guidance.Tick(_earthManager, _capture);
 
-        // 2段目・3段目
-        var earthState = _earthManager.EarthState;
-        var trackingState = _earthManager.EarthTrackingState;
+        _text.text = Headline() + Checklist() + (_showDetail ? Detail() : "");
+    }
 
-        // 4段目：追跡中のときだけ値が意味を持つ
-        string geoInfo;
-        if (trackingState == TrackingState.Tracking)
+    // ------------------------------------------------------------
+    // 1段目: いま何をすべきか
+    // ------------------------------------------------------------
+
+    private string Headline()
+    {
+        string c = _guidance.LevelColor;
+        string s = $"<size=150%><color={c}>● {_guidance.headline}</color></size>\n";
+
+        if (_guidance.level == CaptureGuidance.Level.Recording && _capture != null)
+        {
+            int sec = Mathf.FloorToInt(_capture.RecordingSeconds);
+            s += $"<size=130%><color={c}>{sec / 60}:{sec % 60:00}"
+                 + $"   {_capture.SavedCount}枚</color></size>\n";
+        }
+
+        s += $"{_guidance.advice}\n";
+        s += "<color=#666666>────────────────</color>\n";
+        return s;
+    }
+
+    // ------------------------------------------------------------
+    // 2段目: 準備できているか
+    // ------------------------------------------------------------
+
+    private string Checklist()
+    {
+        string s = "";
+
+        s += Line(_guidance.SessionState, "端末の追跡",
+                  _guidance.sessionOk ? "良好" : "まだ");
+
+        s += Line(_guidance.EarthState, "位置の取得",
+                  _guidance.earthOk ? "良好" : "待機中");
+
+        s += Line(_guidance.YawState, "方位の精度",
+                  float.IsNaN(_guidance.yawAccuracy)
+                      ? "-" : $"{_guidance.yawAccuracy:F1} 度");
+
+        s += Line(_guidance.HorizState, "位置の精度",
+                  float.IsNaN(_guidance.horizAccuracy)
+                      ? "-" : $"{_guidance.horizAccuracy:F1} m");
+
+        if (_capture != null)
+        {
+            s += Line(_capture.IsHighestResolution ? 2 : 0, "解像度",
+                      _capture.ResolutionText);
+
+            bool spaceOk = _capture.FreeMegabytes < 0
+                           || _capture.FreeMegabytes >= _capture.MinFreeMegabytes;
+            s += Line(spaceOk ? 2 : 0, "空き容量",
+                      _capture.FreeMegabytes < 0
+                          ? "-" : $"{_capture.FreeMegabytes / 1024f:F1} GB");
+
+            s += $"  <color=#888888>メモ</color>   "
+                 + $"<color=#FFC24B>{_capture.Note}</color>\n";
+        }
+
+        if (_guidance.extrapolating)
+        {
+            s += $"<color=#FFC24B>  ※ 精度の値が {_guidance.frozenSeconds:F0} 秒"
+                 + "動いていません（外挿の疑い）</color>\n";
+        }
+
+        s += "<color=#666666>────────────────</color>\n";
+        return s;
+    }
+
+    private static string Line(int state, string label, string value)
+    {
+        return $"  {CaptureGuidance.Mark(state)} <color=#CCCCCC>{label}</color>"
+               + $"   {value}\n";
+    }
+
+    // ------------------------------------------------------------
+    // 3段目: 細かい数値（不具合を追うとき用）
+    // ------------------------------------------------------------
+
+    private string Detail()
+    {
+        string s = "<size=80%><color=#999999>";
+
+        if (_capture != null)
+        {
+            s += $"撮影 {(_capture.IsRecording ? _capture.SessionName : "停止中")}"
+                 + $"  {_capture.TargetFps}fps 設定\n";
+            s += $"保存 {_capture.SavedCount} / 見送り {_capture.DroppedCount}"
+                 + $" / 未処理 {_capture.PendingConversions}"
+                 + $" / 角速度 {_capture.LastAngularSpeed:F0} 度毎秒\n";
+            s += $"{_capture.LastMessage}\n";
+        }
+
+        if (_logger != null)
+        {
+            s += $"LOG {(_logger.IsRecording ? "● " + _logger.FileName : "停止中")}"
+                 + $"  CSV {_logger.FileCount}件\n";
+        }
+
+        s += $"ARSession {ARSession.state} / EarthState {_earthManager.EarthState}"
+             + $" / 位置情報 {Input.location.status}\n";
+
+        if (_earthManager.EarthTrackingState == TrackingState.Tracking)
         {
             var pose = _earthManager.CameraGeospatialPose;
-            geoInfo =
-                $"緯度     : {pose.Latitude:F7}\n" +
-                $"経度     : {pose.Longitude:F7}\n" +
-                $"楕円体高 : {pose.Altitude:F2} m\n" +
-                $"水平精度 : {pose.HorizontalAccuracy:F2} m\n" +
-                $"垂直精度 : {pose.VerticalAccuracy:F2} m\n" +
-                $"方位精度 : {pose.OrientationYawAccuracy:F2} 度\n" +
-                $"方位(参考): {HeadingFromEun(pose.EunRotation):F1} 度";
-        }
-        else
-        {
-            geoInfo = "(まだ位置が取れていません)";
+            s += $"緯度 {pose.Latitude:F7}  経度 {pose.Longitude:F7}\n";
+            s += $"楕円体高 {pose.Altitude:F2} m  垂直精度 {pose.VerticalAccuracy:F2} m\n";
+            s += $"方位(参考) {HeadingFromEun(pose.EunRotation):F1} 度\n";
         }
 
         var local = _arCamera.transform.position;
-
-        // 撮影の状態。録画中はここが主役になる
-        string captureLine = "";
-        if (_capture != null)
-        {
-            captureLine =
-                $"撮影: {(_capture.IsRecording ? "● " + _capture.SessionName : "停止中")}\n" +
-                $"{_capture.LastMessage}\n";
-        }
-
-        _text.text =
-            $"{captureLine}" +
-            $"LOG: {(_logger.IsRecording ? "● " + _logger.FileName : "停止中")}  CSV:{_logger.FileCount}件\n" +
-            $"{_logger.LastMessage}\n" +
-            $"[1] 端末対応  : {supported}\n" +
-            $"[2] EarthState: {earthState}\n" +
-            $"[3] Tracking  : {trackingState}\n" +
-            $"    ARSession : {ARSession.state}\n" +
-            $"    位置情報  : {Input.location.status}\n" +
-            $"--------------------------\n" +
-            $"{geoInfo}\n" +
-            $"--------------------------\n" +
-            $"ローカル X:{local.x:F2} Y:{local.y:F2} Z:{local.z:F2}";
+        s += $"ローカル X:{local.x:F2} Y:{local.y:F2} Z:{local.z:F2}";
+        s += "</color></size>";
+        return s;
     }
 
     // EUN座標（X+=東, Y+=上, Z+=北）での前方向から、真北を0度とした方位角を出す

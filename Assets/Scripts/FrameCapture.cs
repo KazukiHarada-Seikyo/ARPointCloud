@@ -62,6 +62,51 @@ public class FrameCapture : MonoBehaviour
     /// <summary>変換が間に合わずに見送った枚数。Step 3 でレートを決める材料</summary>
     public int DroppedCount { get; private set; }
 
+    /// <summary>直近の角速度(度/秒)。画面でブレを警告するために使う</summary>
+    public float LastAngularSpeed { get; private set; }
+
+    /// <summary>未処理の変換。詰まりの目安</summary>
+    public int PendingConversions => _pending;
+
+    /// <summary>設定した保存レート</summary>
+    public int TargetFps => _targetFps;
+
+    /// <summary>録画開始からの経過秒。停止中は0</summary>
+    public float RecordingSeconds =>
+        _writer == null ? 0f : Time.realtimeSinceStartup - _recordStartTime;
+
+    /// <summary>最高解像度で動いているか</summary>
+    public bool IsHighestResolution => IsHighestResolutionActive(out _);
+
+    /// <summary>今の解像度の表示用文字列</summary>
+    public string ResolutionText
+    {
+        get { IsHighestResolutionActive(out string t); return t; }
+    }
+
+    /// <summary>空き容量(MB)。取得できないときは -1</summary>
+    public float FreeMegabytes { get; private set; } = -1f;
+
+    /// <summary>最低限必要な空き容量(MB)</summary>
+    public long MinFreeMegabytes => _minFreeMegabytes;
+
+    /// <summary>
+    /// 撮影メモ。どの階で撮ったかなど、あとから思い出せない事実を残す。
+    /// §6-1(高さの出どころ)の検証では、これが無いとデータの区別がつかない。
+    /// </summary>
+    public string Note { get; private set; } = "-";
+
+    private static readonly string[] NoteChoices =
+        { "-", "1F", "2F", "3F", "4F", "屋上", "地上", "屋内" };
+    private int _noteIndex;
+
+    /// <summary>ボタンから呼ぶ。押すたびに次のメモへ切り替わる</summary>
+    public void CycleNote()
+    {
+        _noteIndex = (_noteIndex + 1) % NoteChoices.Length;
+        Note = NoteChoices[_noteIndex];
+    }
+
     // ------------------------------------------------------------
     // 内部状態
     // ------------------------------------------------------------
@@ -74,6 +119,10 @@ public class FrameCapture : MonoBehaviour
     private int _pending;                // 未処理の変換
     private long _lastSavedUnixMs = -1;
     private Texture2D _texture;
+    private float _recordStartTime;
+
+    // 空き容量の問い合わせは重いので、数秒に1回だけ更新する
+    private float _nextFreeSpaceCheck;
 
     // ブレの目安(angular_speed_deg_s)を出すために、直前に保存したコマを覚えておく
     private bool _hasPrevPose;
@@ -89,7 +138,7 @@ public class FrameCapture : MonoBehaviour
         "local_px,local_py,local_pz,local_qx,local_qy,local_qz,local_qw," +
         "lat,lon,alt_ellipsoid,eun_qx,eun_qy,eun_qz,eun_qw,acc_h,acc_v,acc_yaw," +
         "filename,img_w,img_h,fx,fy,cx,cy," +
-        "angular_speed_deg_s,screen_orientation";
+        "angular_speed_deg_s,screen_orientation,note";
 
     // ------------------------------------------------------------
     // ライフサイクル
@@ -103,6 +152,18 @@ public class FrameCapture : MonoBehaviour
     private void OnDisable()
     {
         if (_cameraManager != null) _cameraManager.frameReceived -= OnFrameReceived;
+    }
+
+    private void Update()
+    {
+        // 空き容量の問い合わせは重いので、数秒に1回でよい。
+        // 画面に出すためだけなので、精度も要らない
+        if (Time.realtimeSinceStartup >= _nextFreeSpaceCheck)
+        {
+            _nextFreeSpaceCheck = Time.realtimeSinceStartup + 3f;
+            long b = GetFreeBytes();
+            FreeMegabytes = b < 0 ? -1f : b / 1024f / 1024f;
+        }
     }
 
     private void OnApplicationPause(bool paused)
@@ -213,6 +274,7 @@ public class FrameCapture : MonoBehaviour
         _lastSavedUnixMs = -1;
         _hasPrevPose = false;
         _stopRequested = false;
+        _recordStartTime = Time.realtimeSinceStartup;
 
         LastMessage = $"録画開始 {SessionName} / {_targetFps}fps";
         Debug.Log(LastMessage);
@@ -295,7 +357,8 @@ public class FrameCapture : MonoBehaviour
         {
             float deg = Quaternion.Angle(_prevRotation, rotation);
             float sec = (unixMs - _prevUnixMs) / 1000f;
-            angularSpeed = (deg / sec).ToString("F2", CultureInfo.InvariantCulture);
+            LastAngularSpeed = deg / sec;
+            angularSpeed = LastAngularSpeed.ToString("F2", CultureInfo.InvariantCulture);
         }
         _prevRotation = rotation;
         _prevUnixMs = unixMs;
@@ -350,6 +413,8 @@ public class FrameCapture : MonoBehaviour
                 // 両者は90度ずれる。PC側で戻せるように、向きを生値で残す
                 screenOrientation = Screen.orientation,
 
+                note = Note,
+
                 isStreaming = stream,
             };
 
@@ -375,6 +440,7 @@ public class FrameCapture : MonoBehaviour
         public XRCameraIntrinsics intrinsics;
         public string angularSpeed;
         public ScreenOrientation screenOrientation;
+        public string note;
         public bool isStreaming;
     }
 
@@ -499,6 +565,7 @@ public class FrameCapture : MonoBehaviour
 
             row.angularSpeed,
             row.screenOrientation.ToString(),
+            row.note,
         }));
     }
 

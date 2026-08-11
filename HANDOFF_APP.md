@@ -22,7 +22,8 @@
 | ファイル | 役割 | 状態 |
 |---|---|---|
 | `FrameCapture.cs` | 姿勢付き連番JPEGの撮影＋`frames.csv` | 実機確認済み |
-| `GeospatialStatusDisplay.cs` | 4段ステータス＋精度＋方位角(参考)＋ローカル座標の画面表示 | 完成 |
+| `CaptureGuidance.cs` | 「いま撮ってよいか」の判定と案内文。MonoBehaviourではない | 実機未確認 |
+| `GeospatialStatusDisplay.cs` | 案内→チェック項目→数値の3段表示 | 実機未確認 |
 | `GeospatialCsvLogger.cs` | 毎フレーム生値のみCSV記録＋NativeShare共有 | 完成 |
 
 3本とも同一GameObject(`Debug UI`)に貼り、Inspectorで相互参照を接続済み。UIはCanvas＋TextMeshPro(Noto Sans JP, Dynamicアトラス)。ボタンからOnClickで各メソッドを呼ぶ構成。
@@ -124,8 +125,12 @@ session_state, earth_state, tracking_state,
 local_px, local_py, local_pz, local_qx, local_qy, local_qz, local_qw,
 lat, lon, alt_ellipsoid, eun_qx, eun_qy, eun_qz, eun_qw, acc_h, acc_v, acc_yaw,
 filename, img_w, img_h, fx, fy, cx, cy,
-angular_speed_deg_s
+angular_speed_deg_s, screen_orientation, note
 ```
+
+`screen_orientation` は `Screen.orientation` の生値。姿勢と画像の90度ずれを戻すために要る（§3参照）。
+
+`note` は撮影メモの生値（`-` / `1F` / `2F` / … ）。画面のボタンで切り替える。§6-1の階別検証では、これが無いとどのデータがどの階か分からなくなる。
 
 列名と定義は既存の `geolog_*.csv` に合わせてある（`frame_index` ではなく `frame`）。前半24列は `geolog_*.csv` と同じ意味なので、解析スクリプトを使い回せる。
 
@@ -235,5 +240,5 @@ Android 11以降、この領域はファイルマネージャから見えない�
 ## 5. 後回しにしている宿題
 
 - **高さの出どころ**: 垂直精度が水平より良いのが不自然。地形の標高データ由来の疑いがある。屋外で両階ともVPSが成立した状態を作って測り直す（屋外に出る回にまとめる）
-- **外挿の検出**: 精度値が固着している区間は測定ではなく外挿。画面とCSVに検出を入れると撮影中に気づける。まだ未実装
+- ~~**外挿の検出**~~ 実装済み（`CaptureGuidance.cs`）。精度値が2秒動かなければ外挿を疑って画面に出す。**CSVには書かない** — 精度値そのものが記録されているので、PC側で同じ判定ができるため
 - **遡り補正（ループクロージャ）**: フェーズ0では素の値を記録する方針。対策はアンカー。まだ手を付けていない

@@ -332,6 +332,13 @@
       "dependencies": {},
       "hash": "5f3680e2938f59c87b3d01f052980381f62ed9d4"
     },
+    "jp.seikyo.lasimporter": {
+      "version": "https://github.com/KazukiHarada-Seikyo/UnityLasImporter.git",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {},
+      "hash": "52580c361ddb2de91d20605fa541fc4f29f9d710"
+    },
     "com.unity.modules.accessibility": {
       "version": "1.0.0",
       "depth": 0,

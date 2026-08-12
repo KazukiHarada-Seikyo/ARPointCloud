@@ -70,3 +70,7 @@ crashlytics-build.properties
 # 撮影データは必ずこのどちらかに置くこと。
 /Captures/
 /Data/
+
+# 生成した点群。Unityで見るために Assets の下に置くが、成果物なので
+# リポジトリには入れない（作り直せる）
+/Assets/PointClouds/

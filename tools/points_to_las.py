@@ -239,15 +239,15 @@ def read_ply(path):
             ir, ig, ib = (names.index("red"), names.index("green"),
                           names.index("blue"))
 
-        pts = []
+        # 密な点群は数千万点になる。リストにせず1点ずつ流す
         unpack = struct.Struct(code).unpack
+        read = f.read
         for _ in range(count):
-            v = unpack(f.read(stride))
+            v = unpack(read(stride))
             if has_rgb:
-                pts.append((v[ix], v[iy], v[iz], v[ir], v[ig], v[ib], None, None))
+                yield (v[ix], v[iy], v[iz], v[ir], v[ig], v[ib], None, None)
             else:
-                pts.append((v[ix], v[iy], v[iz], 128, 128, 128, None, None))
-        return pts
+                yield (v[ix], v[iy], v[iz], 128, 128, 128, None, None)
 
 
 # ----------------------------------------------------------------------
@@ -275,7 +275,12 @@ def build_geokey_vlr(epsg):
 def write_las(path, points, epsg, scale=0.001):
     """LAS 1.2 / 点フォーマット2 で書き出す。
 
-    points は (x_east, y_north, z, r, g, b) のならび。r,g,b は 0〜255。
+    points は (x_east, y_north, z, r, g, b) を順に出すもの。
+    **リストでも生成器でもよい。** 密な点群は数千万点になるため、
+    全部をメモリに載せると数GBを食う。生成器を渡せば流し込みで書ける。
+
+    そのために、点数と範囲はヘッダを仮の値で書いておき、
+    書き終えてから該当箇所だけ上書きする。
 
     色は仕様どおり16bitへ伸ばして書く（0〜255 を 0〜65535 に）。
     0〜255 のまま16bitの箱に入れる実装が世に多く、読む側は
@@ -284,15 +289,13 @@ def write_las(path, points, epsg, scale=0.001):
     その曖昧さが最初から生じない。
 
     255 → 65535 にするには 257 を掛ける（65535 = 255 × 257）。
+
+    戻り値: (点数, (minx, maxx), (miny, maxy), (minz, maxz))
     """
     vlr = build_geokey_vlr(epsg)
     header_size = 227
     offset_to_points = header_size + len(vlr)
     stride = 26   # 点フォーマット2
-
-    xs = [p[0] for p in points]
-    ys = [p[1] for p in points]
-    zs = [p[2] for p in points]
 
     with open(path, "wb") as f:
         f.write(b"LASF")
@@ -305,18 +308,15 @@ def write_las(path, points, epsg, scale=0.001):
         f.write(struct.pack("<HI", header_size, offset_to_points))
         f.write(struct.pack("<I", 1))              # VLRの数
         f.write(struct.pack("<BH", 2, stride))     # フォーマット番号, 1点のバイト数
-        f.write(struct.pack("<I", len(points)))    # 点の数
 
-        f.write(struct.pack("<I", len(points)))    # リターン別の点数(5個)
+        # 点数と範囲はまだ分からない。0で埋めておいて、最後に上書きする
+        f.write(struct.pack("<I", 0))              # 107: 点の数
+        f.write(struct.pack("<I", 0))              # 111: リターン別の点数(5個)
         f.write(struct.pack("<4I", 0, 0, 0, 0))
 
         f.write(struct.pack("<3d", scale, scale, scale))
         f.write(struct.pack("<3d", 0.0, 0.0, 0.0))   # オフセットは0
-
-        # 範囲は Max → Min の順
-        f.write(struct.pack("<2d", max(xs), min(xs)))
-        f.write(struct.pack("<2d", max(ys), min(ys)))
-        f.write(struct.pack("<2d", max(zs), min(zs)))
+        f.write(struct.pack("<6d", 0, 0, 0, 0, 0, 0))  # 179: 範囲
 
         f.write(vlr)
 
@@ -324,7 +324,19 @@ def write_las(path, points, epsg, scale=0.001):
         #   X,Y,Z(int32×3) 強度(u16) 反射フラグ(u8) 分類(u8)
         #   スキャン角(i8) ユーザーデータ(u8) 出所ID(u16) R,G,B(u16×3)
         pack = struct.Struct("<iiiHBBbBH3H").pack
+        n = 0
+        lo = [float("inf")] * 3
+        hi = [float("-inf")] * 3
+
         for x, y, z, r, g, b in points:
+            if x < lo[0]: lo[0] = x
+            if x > hi[0]: hi[0] = x
+            if y < lo[1]: lo[1] = y
+            if y > hi[1]: hi[1] = y
+            if z < lo[2]: lo[2] = z
+            if z > hi[2]: hi[2] = z
+            n += 1
+
             f.write(pack(
                 int(round(x / scale)), int(round(y / scale)), int(round(z / scale)),
                 0,        # 強度
@@ -334,6 +346,20 @@ def write_las(path, points, epsg, scale=0.001):
                 0,        # ユーザーデータ
                 1,        # 点の出所ID
                 r * 257, g * 257, b * 257))   # 8bit → 16bit
+
+        if n == 0:
+            raise ValueError("点が1つもありません")
+
+        # 仮で埋めておいたヘッダを、実際の値で上書きする
+        f.seek(107)
+        f.write(struct.pack("<I", n))          # 点の数
+        f.write(struct.pack("<I", n))          # リターン別の点数（1回目に全部）
+        f.seek(179)
+        f.write(struct.pack("<2d", hi[0], lo[0]))   # 範囲は Max → Min の順
+        f.write(struct.pack("<2d", hi[1], lo[1]))
+        f.write(struct.pack("<2d", hi[2], lo[2]))
+
+    return n, (lo[0], hi[0]), (lo[1], hi[1]), (lo[2], hi[2])
 
 
 # ----------------------------------------------------------------------
@@ -363,6 +389,12 @@ def main():
     args = ap.parse_args()
 
     # --- 点群 ---------------------------------------------------------
+    #
+    # COLMAPの疎な点群は十数万点なのでリストで持てる。
+    # PLY(密な点群)は数千万点になりうるので、リストにせず流し込む。
+    # そのため以降は「点数を数えない」書き方に統一してある。
+    streaming = not os.path.isdir(args.model)
+
     if os.path.isdir(args.model):
         b, t = (os.path.join(args.model, "points3D.bin"),
                 os.path.join(args.model, "points3D.txt"))
@@ -372,12 +404,12 @@ def main():
             pts = read_colmap_points_txt(t)
         else:
             sys.exit(f"points3D.bin も .txt もありません: {args.model}")
+        if not pts:
+            sys.exit("点が1つもありません")
+        print(f"点群 {len(pts):,} 点")
     else:
         pts = read_ply(args.model)
-
-    if not pts:
-        sys.exit("点が1つもありません")
-    print(f"点群 {len(pts):,} 点")
+        print("点群 PLY を流し込みで読む（点数は書き出し後に分かる）")
 
     # --- frames.csv ---------------------------------------------------
     csv_path = os.path.join(args.rec_dir, "frames.csv")
@@ -436,85 +468,90 @@ def main():
     ref_local = (pxs[len(pxs) // 2], pys[len(pys) // 2], pzs[len(pzs) // 2])
 
     # --- 絞り込み -----------------------------------------------------
-    before = len(pts)
+    #
+    # 数千万点を扱うので、条件ごとにリストを作り直すのではなく
+    # 1点ずつ通す形にする。除外した数は最後に報告する。
+    stats = {"トラック長": 0, "再投影誤差": 0, "距離": 0, "残った": 0}
 
-    def report(label, kept):
-        n = len(pts) - len(kept)
-        if n:
-            print(f"  {label} で {n:,} 点を除外")
-        return kept
-
-    if args.min_track > 1:
-        pts = report(f"トラック長 {args.min_track}枚未満",
-                     [p for p in pts
-                      if p[7] is None or p[7] >= args.min_track])
-
-    if args.max_error is not None:
-        pts = report(f"再投影誤差 {args.max_error}px 以上",
-                     [p for p in pts
-                      if p[6] is None or p[6] < args.max_error])
-
+    cams = None
     if args.max_distance and args.max_distance > 0:
         # カメラの通り道からの距離で測る。重心からだと経路の端が不当に遠くなる。
         # 全カメラと比べると点数×台数になるので、間引いた代表点を使う
-        cams = []
         stride = max(1, len(rows) // 200)
-        for r in rows[::stride]:
-            cams.append((float(r["local_px"]), float(r["local_py"]),
-                         -float(r["local_pz"])))
-
+        cams = [(float(r["local_px"]), float(r["local_py"]),
+                 -float(r["local_pz"])) for r in rows[::stride]]
         lim2 = args.max_distance ** 2
-        keep = []
-        for p in pts:
-            for c in cams:
-                dx = p[0] - c[0]
-                dy = p[1] - c[1]
-                dz = p[2] - c[2]
-                if dx * dx + dy * dy + dz * dz <= lim2:
-                    keep.append(p)
-                    break
-        pts = report(f"通り道から {args.max_distance}m 超", keep)
 
-    if len(pts) != before:
-        print(f"絞り込み {before:,} → {len(pts):,} 点 "
-              f"({len(pts)/before*100:.1f}%)")
-    if not pts:
-        sys.exit("絞り込みで点が全部消えました。条件を緩めてください")
+    def sift(source):
+        for p in source:
+            if args.min_track > 1 and p[7] is not None and p[7] < args.min_track:
+                stats["トラック長"] += 1
+                continue
+
+            if args.max_error is not None and p[6] is not None \
+                    and p[6] >= args.max_error:
+                stats["再投影誤差"] += 1
+                continue
+
+            if cams is not None:
+                near = False
+                for c in cams:
+                    dx = p[0] - c[0]
+                    dy = p[1] - c[1]
+                    dz = p[2] - c[2]
+                    if dx * dx + dy * dy + dz * dz <= lim2:
+                        near = True
+                        break
+                if not near:
+                    stats["距離"] += 1
+                    continue
+
+            stats["残った"] += 1
+            yield p
+
+    pts = sift(pts)
 
     # --- 変換 ---------------------------------------------------------
     m = q_to_matrix(q_w2eun)
     x0, y0, z0 = geodetic_to_ecef(lat0, lon0, alt0)
 
-    out_pts = []
-    for px, py, pz, r, g, b, _err, _tl in pts:
-        # COLMAPの世界は Unity左手系のZを反転したもの。まず戻す
-        u = (px - ref_local[0], py - ref_local[1], -pz - ref_local[2])
+    def to_survey(source):
+        """局所座標の点を、平面直角座標系へ1点ずつ流す。
 
-        # 局所世界 → EUN (東, 上, 北)
-        e = m[0][0] * u[0] + m[0][1] * u[1] + m[0][2] * u[2]
-        up = m[1][0] * u[0] + m[1][1] * u[1] + m[1][2] * u[2]
-        no = m[2][0] * u[0] + m[2][1] * u[1] + m[2][2] * u[2]
+        リストを作らないのは、密な点群が数千万点になるため。
+        全部をメモリに載せると数GBを食う。
+        """
+        for px, py, pz, r, g, b, _err, _tl in source:
+            # COLMAPの世界は Unity左手系のZを反転したもの。まず戻す
+            u = (px - ref_local[0], py - ref_local[1], -pz - ref_local[2])
 
-        # EUN → ECEF → 緯度経度高 → 平面直角座標
-        ex, ey, ez = enu_to_ecef(e, no, up, lat0, lon0, x0, y0, z0)
-        lat, lon, h = ecef_to_geodetic(ex, ey, ez)
-        northing, easting = jgd2011.forward(lat, lon, args.zone)
+            # 局所世界 → EUN (東, 上, 北)
+            e = m[0][0] * u[0] + m[0][1] * u[1] + m[0][2] * u[2]
+            up = m[1][0] * u[0] + m[1][1] * u[1] + m[1][2] * u[2]
+            no = m[2][0] * u[0] + m[2][1] * u[1] + m[2][2] * u[2]
 
-        # LASは X=東, Y=北。Zは標高(楕円体高からジオイド高を引く)
-        out_pts.append((easting, northing, h - args.geoid, r, g, b))
+            # EUN → ECEF → 緯度経度高 → 平面直角座標
+            ex, ey, ez = enu_to_ecef(e, no, up, lat0, lon0, x0, y0, z0)
+            lat, lon, h = ecef_to_geodetic(ex, ey, ez)
+            northing, easting = jgd2011.forward(lat, lon, args.zone)
+
+            # LASは X=東, Y=北。Zは標高(楕円体高からジオイド高を引く)
+            yield (easting, northing, h - args.geoid, r, g, b)
 
     epsg = jgd2011.epsg_for_zone(args.zone)
     out = args.out or os.path.join(args.rec_dir, f"pointcloud_zone{args.zone}.las")
-    write_las(out, out_pts, epsg)
+    n, rx, ry, rz = write_las(out, to_survey(pts), epsg)
 
-    xs = [p[0] for p in out_pts]
-    ys = [p[1] for p in out_pts]
-    zs = [p[2] for p in out_pts]
+    for label in ("トラック長", "再投影誤差", "距離"):
+        if stats[label]:
+            print(f"  {label} で {stats[label]:,} 点を除外")
+
     print(f"\n出力 {out}")
+    print(f"  {n:,} 点 / {os.path.getsize(out) / 1024 / 1024:.1f} MB")
     print(f"  EPSG:{epsg} (平面直角座標系{args.zone}系) / X=東, Y=北")
-    print(f"  X(東)  {min(xs):.3f} 〜 {max(xs):.3f}  ({max(xs) - min(xs):.2f} m)")
-    print(f"  Y(北)  {min(ys):.3f} 〜 {max(ys):.3f}  ({max(ys) - min(ys):.2f} m)")
-    print(f"  Z(標高) {min(zs):.3f} 〜 {max(zs):.3f}  ({max(zs) - min(zs):.2f} m)")
+    print(f"  X(東)  {rx[0]:.3f} 〜 {rx[1]:.3f}  ({rx[1] - rx[0]:.2f} m)")
+    print(f"  Y(北)  {ry[0]:.3f} 〜 {ry[1]:.3f}  ({ry[1] - ry[0]:.2f} m)")
+    print(f"  Z(標高) {rz[0]:.3f} 〜 {rz[1]:.3f}  ({rz[1] - rz[0]:.2f} m)")
     print(f"  ジオイド高 {args.geoid} m を定数で引いている(要改善)")
 
 

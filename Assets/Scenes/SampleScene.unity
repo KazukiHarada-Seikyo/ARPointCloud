@@ -236,7 +236,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: ImageDebug
+  m_text: Record
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: a7244d29bc57c8e4e992f36a7251b733, type: 2}
   m_sharedMaterial: {fileID: -881767315338036961, guid: a7244d29bc57c8e4e992f36a7251b733, type: 2}
@@ -2536,6 +2536,7 @@ GameObject:
   - component: {fileID: 2044097826}
   - component: {fileID: 2044097824}
   - component: {fileID: 2044097827}
+  - component: {fileID: 2044097828}
   m_Layer: 5
   m_Name: FrameRecord
   m_TagString: Untagged
@@ -2651,6 +2652,24 @@ MonoBehaviour:
   _roundness: 1
   _ringWidth: 0.055
   _softness: 0.5
+--- !u!114 &2044097828
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2044097822}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a15aaa95ccc414e409716360f32673f7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::UIButtonJuice
+  _pressedScale: 0.88
+  _stiffness: 620
+  _damping: 22
+  _releaseKick: 2.4
+  _tiltDegrees: 0
+  _randomTiltDirection: 1
 --- !u!1 &2074247617
 GameObject:
   m_ObjectHideFlags: 0
@@ -2795,7 +2814,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "\u524A\u9664"
+  m_text: Delete
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: a7244d29bc57c8e4e992f36a7251b733, type: 2}
   m_sharedMaterial: {fileID: -881767315338036961, guid: a7244d29bc57c8e4e992f36a7251b733, type: 2}

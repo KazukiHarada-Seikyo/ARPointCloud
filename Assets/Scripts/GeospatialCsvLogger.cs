@@ -76,7 +76,9 @@ public class GeospatialCsvLogger : MonoBehaviour
             Application.persistentDataPath,
             $"geolog_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
 
-        _writer = new StreamWriter(_path, false, Encoding.UTF8);
+        // BOM を付けない。付けると1列目の名前が "﻿unix_ms" になり、
+        // Python の csv.DictReader などで1列目だけ読めなくなる
+        _writer = new StreamWriter(_path, false, new UTF8Encoding(false));
         _writer.WriteLine(
             "unix_ms,elapsed_s,frame," +
             "session_state,earth_state,tracking_state," +

@@ -192,7 +192,7 @@ VERIFIED_ORIENTATIONS = {"Portrait"}
 
 
 def load_rows(csv_path):
-    with open(csv_path, newline="", encoding="utf-8") as f:
+    with open(csv_path, newline="", encoding="utf-8-sig") as f:
         return list(csv.DictReader(f))
 
 

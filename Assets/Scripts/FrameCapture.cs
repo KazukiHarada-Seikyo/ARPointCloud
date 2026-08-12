@@ -525,8 +525,12 @@ public class FrameCapture : MonoBehaviour
         try
         {
             Directory.CreateDirectory(_sessionDir);
+            // BOM を付けない。付けると1列目の名前が "﻿unix_ms" になり、
+            // Python の csv.DictReader などで1列目だけ読めなくなる
+            // (実測データで踏んだ)。中身はASCIIなのでBOMは要らない
             _writer = new StreamWriter(
-                Path.Combine(_sessionDir, "frames.csv"), false, System.Text.Encoding.UTF8);
+                Path.Combine(_sessionDir, "frames.csv"), false,
+                new System.Text.UTF8Encoding(false));
             _writer.WriteLine(CsvHeader);
         }
         catch (Exception e)

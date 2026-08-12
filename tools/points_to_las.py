@@ -359,7 +359,7 @@ def main():
 
     # --- frames.csv ---------------------------------------------------
     csv_path = os.path.join(args.rec_dir, "frames.csv")
-    with open(csv_path, newline="", encoding="utf-8") as f:
+    with open(csv_path, newline="", encoding="utf-8-sig") as f:
         rows = [r for r in csv.DictReader(f)
                 if r.get("tracking_state") == "Tracking" and r.get("lat")]
 

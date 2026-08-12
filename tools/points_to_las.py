@@ -158,6 +158,9 @@ def q_angle_deg(a, b):
 # 点群の読み込み
 # ----------------------------------------------------------------------
 
+# 点は (x, y, z, r, g, b, 再投影誤差, トラック長) の8つ組で持つ。
+# 誤差とトラック長は絞り込みに使う。PLYには入っていないので None。
+
 def read_colmap_points_bin(path):
     pts = []
     with open(path, "rb") as f:
@@ -166,10 +169,10 @@ def read_colmap_points_bin(path):
             f.read(8)                                     # point id
             x, y, z = struct.unpack("<3d", f.read(24))
             r, g, b = struct.unpack("<3B", f.read(3))
-            f.read(8)                                     # error
+            (err,) = struct.unpack("<d", f.read(8))
             (track_len,) = struct.unpack("<Q", f.read(8))
             f.read(8 * track_len)
-            pts.append((x, y, z, r, g, b))
+            pts.append((x, y, z, r, g, b, err, track_len))
     return pts
 
 
@@ -180,8 +183,11 @@ def read_colmap_points_txt(path):
             if line.startswith("#") or not line.strip():
                 continue
             p = line.split()
+            # POINT3D_ID X Y Z R G B ERROR TRACK[] as (IMAGE_ID, POINT2D_IDX)
+            track_len = max(0, (len(p) - 8) // 2)
             pts.append((float(p[1]), float(p[2]), float(p[3]),
-                        int(p[4]), int(p[5]), int(p[6])))
+                        int(p[4]), int(p[5]), int(p[6]),
+                        float(p[7]), track_len))
     return pts
 
 
@@ -238,9 +244,9 @@ def read_ply(path):
         for _ in range(count):
             v = unpack(f.read(stride))
             if has_rgb:
-                pts.append((v[ix], v[iy], v[iz], v[ir], v[ig], v[ib]))
+                pts.append((v[ix], v[iy], v[iz], v[ir], v[ig], v[ib], None, None))
             else:
-                pts.append((v[ix], v[iy], v[iz], 128, 128, 128))
+                pts.append((v[ix], v[iy], v[iz], 128, 128, 128, None, None))
         return pts
 
 
@@ -337,6 +343,15 @@ def main():
     ap.add_argument("--geoid", type=float, default=37.0,
                     help="ジオイド高(m)。楕円体高からこれを引いて標高にする。"
                          "名古屋付近の概算値が既定")
+    ap.add_argument("--max-distance", type=float, default=50.0, metavar="M",
+                    help="カメラの通り道からこの距離(m)より遠い点を捨てる。"
+                         "2視点しか見ていない遠方の点は奥行き誤差が巨大になり、"
+                         "点群の範囲だけを無意味に広げる。0で無効")
+    ap.add_argument("--min-track", type=int, default=1, metavar="N",
+                    help="この枚数未満にしか写っていない点を捨てる。"
+                         "3にすると2視点だけの不安定な点が消える")
+    ap.add_argument("--max-error", type=float, default=None, metavar="PX",
+                    help="再投影誤差がこれ以上の点を捨てる")
     ap.add_argument("-o", "--out", default=None, help="出力する .las")
     args = ap.parse_args()
 
@@ -413,12 +428,58 @@ def main():
     pzs = sorted(float(r["local_pz"]) for r in rows)
     ref_local = (pxs[len(pxs) // 2], pys[len(pys) // 2], pzs[len(pzs) // 2])
 
+    # --- 絞り込み -----------------------------------------------------
+    before = len(pts)
+
+    def report(label, kept):
+        n = len(pts) - len(kept)
+        if n:
+            print(f"  {label} で {n:,} 点を除外")
+        return kept
+
+    if args.min_track > 1:
+        pts = report(f"トラック長 {args.min_track}枚未満",
+                     [p for p in pts
+                      if p[7] is None or p[7] >= args.min_track])
+
+    if args.max_error is not None:
+        pts = report(f"再投影誤差 {args.max_error}px 以上",
+                     [p for p in pts
+                      if p[6] is None or p[6] < args.max_error])
+
+    if args.max_distance and args.max_distance > 0:
+        # カメラの通り道からの距離で測る。重心からだと経路の端が不当に遠くなる。
+        # 全カメラと比べると点数×台数になるので、間引いた代表点を使う
+        cams = []
+        stride = max(1, len(rows) // 200)
+        for r in rows[::stride]:
+            cams.append((float(r["local_px"]), float(r["local_py"]),
+                         -float(r["local_pz"])))
+
+        lim2 = args.max_distance ** 2
+        keep = []
+        for p in pts:
+            for c in cams:
+                dx = p[0] - c[0]
+                dy = p[1] - c[1]
+                dz = p[2] - c[2]
+                if dx * dx + dy * dy + dz * dz <= lim2:
+                    keep.append(p)
+                    break
+        pts = report(f"通り道から {args.max_distance}m 超", keep)
+
+    if len(pts) != before:
+        print(f"絞り込み {before:,} → {len(pts):,} 点 "
+              f"({len(pts)/before*100:.1f}%)")
+    if not pts:
+        sys.exit("絞り込みで点が全部消えました。条件を緩めてください")
+
     # --- 変換 ---------------------------------------------------------
     m = q_to_matrix(q_w2eun)
     x0, y0, z0 = geodetic_to_ecef(lat0, lon0, alt0)
 
     out_pts = []
-    for px, py, pz, r, g, b in pts:
+    for px, py, pz, r, g, b, _err, _tl in pts:
         # COLMAPの世界は Unity左手系のZを反転したもの。まず戻す
         u = (px - ref_local[0], py - ref_local[1], -pz - ref_local[2])
 

@@ -74,3 +74,7 @@ crashlytics-build.properties
 # 生成した点群。Unityで見るために Assets の下に置くが、成果物なので
 # リポジトリには入れない（作り直せる）
 /Assets/PointClouds/
+
+# Python
+__pycache__/
+*.pyc

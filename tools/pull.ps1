@@ -56,7 +56,11 @@ $remoteBase = '/sdcard/Android/data/jp.seikyo.arpointcloud/files'
 if ($Latest) {
     $recs = & $adb shell "ls -d $remoteBase/rec_* 2>/dev/null" | Where-Object { $_ -match 'rec_' }
     if (-not $recs) { Write-Error "端末に rec_ フォルダがありません" }
-    $target = ($recs | Sort-Object)[-1].Trim()
+    # 括弧でくくったパイプラインは、結果が1つだと配列にならず文字列のまま
+    # 返る。すると [-1] が最後の1文字(Char)になり .Trim() で落ちる。
+    # rec_ が1つだけのときに必ず踏むので、明示的に配列へ入れる
+    $sorted = @($recs | Sort-Object)
+    $target = $sorted[-1].Trim()
     Write-Host "取り出し: $target"
     & $adb pull $target $dest
 } else {

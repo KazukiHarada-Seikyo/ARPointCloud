@@ -206,6 +206,68 @@ VPSの水平精度が2.36mなので想定内。**短区間の相対距離は正�
 
 ---
 
+## 密な点群が終わらない・落ちるとき
+
+2,732枚を丸ごと `patch_match_stereo` に流すと、素直にやると何時間もかかります。
+止まっているのか進んでいるのか分からないときは、上から順に潰してください。
+
+### 1. まずGPUが使えているか
+
+RTX 5070 は Blackwell 世代（`sm_120`）です。**COLMAPのCUDA部分が
+古いアーキテクチャ向けにビルドされていると、実行時に落ちます。**
+
+```
+no kernel image is available for execution on the device
+```
+
+これが出たら、CUDA 12.8以降でビルドされたCOLMAPが要ります。
+公式の配布版が対応していない時期があるので、確認してください。
+
+```bat
+nvidia-smi                          :: ドライバとCUDAの版
+colmap patch_match_stereo --help    :: CUDA無しビルドだとここで分かる
+```
+
+### 2. 枚数を減らす
+
+`patch_match_stereo` は1枚ずつ処理します。**枚数に比例して時間がかかります。**
+2,732枚は多すぎます。3枚に1枚（911枚）でも点群の密度はさほど落ちません。
+
+```bat
+python toolsrames_to_colmap.py %REC% --stride 3
+```
+
+### 3. 解像度を下げる
+
+GPUメモリが足りないときはここです。既定は元画像のままなので、
+1920×1080 × 多数の隣接画像をキャッシュに載せようとします。
+
+```bat
+colmap patch_match_stereo --workspace_path %WORK%\dense ^
+  --PatchMatchStereo.max_image_size 1600 ^
+  --PatchMatchStereo.cache_size 32
+```
+
+`max_image_size` を 1600 → 1200 → 1000 と下げると、
+メモリも時間もはっきり減ります。点群は粗くなりますが、まず通すことが先です。
+
+### 4. 途中経過を見る
+
+`%WORK%\dense\stereo\depth_maps` に1枚ずつファイルが増えていきます。
+**増えていれば進んでいます。** 増えないなら止まっています。
+
+```bat
+dir /b %WORK%\dense\stereo\depth_maps | find /c ".bin"
+```
+
+### 5. それでもだめなら
+
+**疎な点群（121,846点）でも記事と成果物は成立します。**
+密な点群は「あればより良い」もので、必須ではありません。
+時間を使いすぎるようなら、いったん疎な点群で先に進めてください。
+
+---
+
 ## 既知の落とし穴
 
 | 症状 | 原因 |

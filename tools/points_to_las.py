@@ -131,6 +131,34 @@ def q_to_matrix(q):
     )
 
 
+def last_refix_index(rows):
+    """VPSが最後に解を組み直したコマの番号を返す。
+
+    手がかりは2つ。楕円体高から局所座標の上下動を引いた「下駄」の段差と、
+    方位精度の急な改善。どちらも同じ出来事の別の顔になる。
+    段差が無ければ0(全コマがひとつながり)。
+
+    なぜこれが要るかは PHASE4_ACCURACY.md §1 を参照。
+    """
+    idx = 0
+    for i in range(1, len(rows)):
+        try:
+            a = (float(rows[i]["alt_ellipsoid"]) - float(rows[i]["local_py"]))
+            b = (float(rows[i - 1]["alt_ellipsoid"])
+                 - float(rows[i - 1]["local_py"]))
+            if abs(a - b) > 0.05:
+                idx = i
+                continue
+        except (KeyError, TypeError, ValueError):
+            pass
+        try:
+            if float(rows[i]["acc_yaw"]) - float(rows[i - 1]["acc_yaw"]) < -0.3:
+                idx = i
+        except (KeyError, TypeError, ValueError):
+            pass
+    return idx
+
+
 def q_average(quats):
     """符号を揃えてから成分ごとに平均する。
 
@@ -386,6 +414,9 @@ def main():
     ap.add_argument("--max-error", type=float, default=None, metavar="PX",
                     help="再投影誤差がこれ以上の点を捨てる")
     ap.add_argument("-o", "--out", default=None, help="出力する .las")
+    ap.add_argument("--use-all-frames", action="store_true",
+                    help="VPSの最新解に限定せず、全コマの平均で置き方を決める"
+                         "(2026-08-12以前の挙動。再現用)")
     args = ap.parse_args()
 
     # --- 点群 ---------------------------------------------------------
@@ -433,8 +464,28 @@ def main():
                              float(r["eun_qz"]), float(r["eun_qw"])))
         rots.append(q_normalize(q_mul(q_eun, q_conj(q_local))))
 
-    q_w2eun = q_average(rots)
-    spread = [q_angle_deg(q, q_w2eun) for q in rots]
+    # --- 最新のVPS解だけを使う ----------------------------------------
+    #
+    # VPSは撮影中に解を組み直す。そのたびに緯度経度・方位・高さが
+    # まとめて飛ぶ。全コマを平均すると古い解と新しい解の中間になり、
+    # どちらでもない置き方になってしまう。
+    # 実測では平均と最新の解で方位が1.21度違った(50m先で1.05m)。
+    # 詳細は PHASE4_ACCURACY.md §5。
+    if args.use_all_frames:
+        seg = rows
+        print("最新解への限定を無効化しています(--use-all-frames)")
+    else:
+        seg = rows[last_refix_index(rows):]
+        if len(seg) < 30:
+            print(f"  ※ 最新解の区間が {len(seg)} コマしかありません。"
+                  "全コマを使います")
+            seg = rows
+        elif len(seg) < len(rows):
+            print(f"最新のVPS解の区間 {len(seg)} / {len(rows)} コマを基準に使います")
+
+    seg_rots = rots[len(rows) - len(seg):]
+    q_w2eun = q_average(seg_rots)
+    spread = [q_angle_deg(q, q_w2eun) for q in seg_rots]
     spread.sort()
     print(f"局所→EUN回転のばらつき 中央値 {spread[len(spread) // 2]:.2f}度"
           f" / 最大 {spread[-1]:.2f}度")
@@ -443,29 +494,35 @@ def main():
               "方位が信用できない")
 
     # --- 基準点 -------------------------------------------------------
-    lats = sorted(float(r["lat"]) for r in rows)
-    lons = sorted(float(r["lon"]) for r in rows)
-    alts = sorted(float(r["alt_ellipsoid"]) for r in rows)
-    lat0 = lats[len(lats) // 2]
-    lon0 = lons[len(lons) // 2]
-    alt0 = alts[len(alts) // 2]
+    #
+    # 緯度経度と局所座標は**同じ1コマから**取る。
+    # 列ごとに別々の中央値を取ると、経路が曲がっているときに
+    # 別のコマ同士を同じ点として結んでしまい、点群全体がずれる
+    # (実測で2.22m。PHASE4_ACCURACY.md §5)。
+    # 重心に一番近いコマを選ぶのは、回転の誤差の腕を最短にするため。
+    cx = sum(float(r["local_px"]) for r in seg) / len(seg)
+    cz = sum(float(r["local_pz"]) for r in seg) / len(seg)
+    anchor = min(seg, key=lambda r: (float(r["local_px"]) - cx) ** 2
+                 + (float(r["local_pz"]) - cz) ** 2)
 
-    accs = sorted(float(r["acc_h"]) for r in rows if r.get("acc_h"))
+    lat0 = float(anchor["lat"])
+    lon0 = float(anchor["lon"])
+    alt0 = float(anchor["alt_ellipsoid"])
+    ref_local = (float(anchor["local_px"]), float(anchor["local_py"]),
+                 float(anchor["local_pz"]))
+
+    accs = sorted(float(r["acc_h"]) for r in seg if r.get("acc_h"))
     acc_h = accs[len(accs) // 2] if accs else float("nan")
-    yaws = sorted(float(r["acc_yaw"]) for r in rows if r.get("acc_yaw"))
+    yaws = sorted(float(r["acc_yaw"]) for r in seg if r.get("acc_yaw"))
     acc_yaw = yaws[len(yaws) // 2] if yaws else float("nan")
 
-    print(f"基準点 {lat0:.8f}, {lon0:.8f}  楕円体高 {alt0:.3f} m")
+    print(f"基準点 {lat0:.8f}, {lon0:.8f}  楕円体高 {alt0:.3f} m"
+          + (f"  (elapsed {float(anchor['elapsed_s']):.1f} 秒のコマ)"
+             if anchor.get("elapsed_s") else ""))
     print(f"  ARCoreの自己申告 水平精度 {acc_h:.2f} m / 方位精度 {acc_yaw:.2f} 度")
     if acc_yaw > 5.0:
         print("  ※ 方位精度が悪い。点群全体がこの角度だけ回る。"
               "50m先で1度は約0.9mのずれになる")
-
-    # 基準となる局所座標。回転の基準に使ったコマ群の中央値
-    pxs = sorted(float(r["local_px"]) for r in rows)
-    pys = sorted(float(r["local_py"]) for r in rows)
-    pzs = sorted(float(r["local_pz"]) for r in rows)
-    ref_local = (pxs[len(pxs) // 2], pys[len(pys) // 2], pzs[len(pzs) // 2])
 
     # --- 絞り込み -----------------------------------------------------
     #
@@ -552,7 +609,10 @@ def main():
     print(f"  X(東)  {rx[0]:.3f} 〜 {rx[1]:.3f}  ({rx[1] - rx[0]:.2f} m)")
     print(f"  Y(北)  {ry[0]:.3f} 〜 {ry[1]:.3f}  ({ry[1] - ry[0]:.2f} m)")
     print(f"  Z(標高) {rz[0]:.3f} 〜 {rz[1]:.3f}  ({rz[1] - rz[0]:.2f} m)")
-    print(f"  ジオイド高 {args.geoid} m を定数で引いている(要改善)")
+    print(f"  ジオイド高 {args.geoid} m を定数で引いている")
+    if abs(args.geoid - 37.0) < 1e-9:
+        print("    ※ 既定値のままです。場所ごとに1m単位で違うので、")
+        print("      tools\check_dem.py を走らせて正しい値を確かめてください")
 
 
 if __name__ == "__main__":

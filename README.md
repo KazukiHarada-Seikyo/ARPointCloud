@@ -19,22 +19,24 @@ frames.csv                    姿勢はARCoreから与える     X=東 / Y=北 /
 
 **できること**
 
-- スマホを持って歩くだけで、**メートル単位で正しい**点群がとれる
-- 点群に**日本の平面直角座標系（19系すべて）と標高**が付く
-- 出力は LAS 1.2。Unity向けのLASインポータや CloudCompare で開ける
+- スマホを持って歩くだけで、**メートル単位で正しい**点群がとれます
+- 点群に**日本の平面直角座標系（19系すべて）と標高**が付きます
+- 出力は LAS 1.2。Unity向けのLASインポータや CloudCompare で開くことができます。
+  下記リポジトリは私が公開しているOSSです。
+  https://github.com/KazukiHarada-Seikyo/UnityLasImporter
 
-**できないこと・限界**
+**できないこと**
 
-- **絶対位置は数m級**です。点群の「形と大きさ」は正しくても、「地球上のどこに置くか」は
+- **絶対位置は数m級**です。点群の形と大きさは正しくても、地球上のどこに置くのかは
   VPS（ARCore Geospatial）任せで、水平2.4m・方位4.7度ほどの誤差が乗ります
 - レンズ歪みを補正していません（AR Foundation が係数を返さないため）
-- 測量成果ではありません。**遊びと学習と、そこそこの実用**が守備範囲です
+- 測量成果としては正確ではありません。**学習と、専門機器無しでの実用**が守備範囲です。
 
 ---
 
 ## 精度（実測値）
 
-**「精度」をひとつの数字にまとめていません。** 誤差源が別で、桁も別だからです。
+**精度といっても、何をもっての精度かいろいろあります** 誤差源が別だったり桁も別だったりするからです。
 
 ### 相対精度 — 形と大きさ
 
@@ -42,7 +44,7 @@ frames.csv                    姿勢はARCoreから与える     X=東 / Y=北 /
 |---|---|---|
 | 実寸（スケール） | **1%以内** | 173cmの巻尺を三角測量して172.6cm |
 
-100m歩いて1m以内。**外部の物差しで検証した値**です。
+100m歩いて1m以内。**現実世界のの巻き尺で検証した値**です。
 
 ### 絶対精度 — 置き場所と向き
 
@@ -60,7 +62,7 @@ frames.csv                    姿勢はARCoreから与える     X=東 / Y=北 /
 | 50 m | 4.15 m |
 | 100 m | 8.30 m |
 
-**この2つを混ぜて「精度◯m」と言わないでください。** 形はcm〜%級、置き場所はm級です。
+**この2つを混ぜて「精度◯m」と言わないでください。** 形はcm〜%単位、置き場所はm単位です。
 
 詳しい測り方と考察は [PHASE4_ACCURACY.md](PHASE4_ACCURACY.md) に、
 原理の解説は [THEORY.md](THEORY.md) にあります。
@@ -74,8 +76,7 @@ frames.csv                    姿勢はARCoreから与える     X=東 / Y=北 /
 - ARCore対応のAndroid端末（実測は Google Pixel 9a）
 - Unity 6000.5.6f1 / AR Foundation 6.5.0 / ARCore XR Plugin 6.5.0 /
   ARCore Extensions 1.54.0（arf6ブランチ）
-- Geospatial API を使うので Google Cloud の APIキーが要ります
-
+- Geospatial API を使うので Google Cloud の APIキーが必要です。
 **点群にする側**
 
 - [COLMAP](https://colmap.github.io/)（密な点群まで作るなら CUDA 版）
@@ -95,7 +96,7 @@ frames.csv                    姿勢はARCoreから与える     X=東 / Y=北 /
 ```
 
 現地での手順は [FIELD_CHECKLIST.md](FIELD_CHECKLIST.md) に。
-**「方位を調整中」のまま撮り始めない**、**基準物のまわりは歩く**あたりが要点です。
+**「方位を調整中」のまま撮り始めない**こと、**基準物のまわりを様々な角度から撮る**ことあたりが要点です。
 
 ### 2. 点群にする
 
@@ -141,8 +142,8 @@ python tools\points_to_las.py <model> <rec_dir> --zone 7 --geoid 37.75
 | ファイル | 中身 |
 |---|---|
 | [ARTICLE.md](ARTICLE.md) | 解説記事。原理から実測まで一本にまとめたもの |
-| [THEORY.md](THEORY.md) | 原理の解説。針穴写真機から三角測量、加速度計がスケールを与える物理まで、導出込み |
-| [PHASE4_ACCURACY.md](PHASE4_ACCURACY.md) | 精度の実測と考察。**ARCore Geospatial が実際どう動いているかの実測を含む** |
+| [THEORY.md](THEORY.md) | 原理の解説。|
+| [PHASE4_ACCURACY.md](PHASE4_ACCURACY.md) | 精度の実測と考察。**ARCore Geospatial が実際どう動いているかの実測も含みます** |
 | [PHASE2_COLMAP.md](PHASE2_COLMAP.md) | COLMAPの手順と実測値 |
 | [HANDOFF_GPU.md](HANDOFF_GPU.md) | GPU機での密な点群 |
 | [FIELD_CHECKLIST.md](FIELD_CHECKLIST.md) | 現地作業の手順 |
@@ -154,7 +155,7 @@ python tools\points_to_las.py <model> <rec_dir> --zone 7 --geoid 37.75
 ## 実測した副産物
 
 精度を測る過程で、ARCore の Geospatial API について分かったことがあります。
-公式には書かれていない挙動なので、使う人の役に立つかもしれません。
+公式には書かれていない挙動なので、使う方の役に立つかもしれないので記述しておきます。
 
 - **返ってくる緯度経度は、連続した測位ではありません。** 区間の前半で決めた
   「局所座標→緯度経度」の変換を後半に外挿しても、105秒・34.7m歩いて2.7cmしかずれません。
@@ -162,7 +163,7 @@ python tools\points_to_las.py <model> <rec_dir> --zone 7 --geoid 37.75
 - **新しい測位情報が入るのは、VPSが解を組み直す瞬間だけ**です。314秒の撮影で1回でした。
   そのとき方位が3.17度回り、高さが0.50m付け替わりました
 - **精度の自己申告値は、照合が入らない間じわじわ悪化します**（実測で毎分0.113度）。
-  「現地に着いたら歩いて周囲を映してから読む」に根拠があります
+  現地に着いたら歩いて周囲を映してから読み始めてください。
 - **楕円体高は測位で毎回求めた値ではありません。** 局所座標の上下動に定数を足したものです
 
 根拠と測り方は [PHASE4_ACCURACY.md](PHASE4_ACCURACY.md) に。
